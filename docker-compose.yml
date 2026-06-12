@@ -1,0 +1,45 @@
+# NVIDIA Cosmos 3 Nano — text/image-to-video API on DGX Spark (GB10, arm64)
+#
+# The API is vLLM-omni's built-in OpenAI-style /v1/videos endpoint; there is
+# no custom server code. The image below is the upstream linux/arm64 build
+# pulled from Docker Hub — pinned by digest for reproducibility. If the image
+# is already present locally (matched by digest), Docker reuses it: no
+# re-download, no duplicate.
+#
+# Prereqs:
+#   1. Model weights in the HF cache — see scripts/download_models.sh
+#   2. HF_TOKEN exported or set in .env (see .env.example)
+#
+# Start:  docker compose up -d
+# Logs:   docker compose logs -f   (model load takes several minutes)
+
+services:
+  cosmos3:
+    image: vllm/vllm-omni:cosmos3@sha256:88d27796de038d346b125ce1756fa7ed7f15505b1896af8327b41d207290811c
+    container_name: cosmos3-api
+    runtime: nvidia
+    ipc: host
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - HF_TOKEN=${HF_TOKEN:-}
+      - TRANSFORMERS_OFFLINE=1
+      - HF_DATASETS_OFFLINE=1
+      - NVIDIA_VISIBLE_DEVICES=all
+    volumes:
+      - ${HF_CACHE_DIR:-${HOME}/.cache/huggingface}:/root/.cache/huggingface
+      - ${COSMOS_MEDIA_DIR:-${HOME}/Documents/cosmos-media}:/media
+    command:
+      - vllm
+      - serve
+      - /root/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/snapshots/main
+      - --omni
+      - --model-class-name
+      - Cosmos3OmniDiffusersPipeline
+      - --allowed-local-media-path
+      - /
+      - --port
+      - "8000"
+      - --init-timeout
+      - "1800"

@@ -1,0 +1,41 @@
+# ── Model weights — NEVER commit (Cosmos3-Nano is ~33 GB) ──────────────
+*.safetensors
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.gguf
+*.onnx
+*.distcp
+models/
+weights/
+checkpoints/
+huggingface/
+.cache/
+
+# ── Generated media ─────────────────────────────────────────────────────
+output/
+outputs/
+*.mp4
+*.webm
+*.avi
+*.mov
+
+# ── Secrets ──────────────────────────────────────────────────────────────
+.env
+*.token
+hf_token*
+
+# ── Python ────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# ── Editor / OS ──────────────────────────────────────────────────────────
+*.code-workspace
+.vscode/
+.idea/
+.DS_Store
