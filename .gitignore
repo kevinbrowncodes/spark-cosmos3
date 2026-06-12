@@ -21,6 +21,9 @@ outputs/
 *.avi
 *.mov
 
+# ── Large/third-party documents (keep local; distill into .md instead) ──
+docs/*.pdf
+
 # ── Secrets ──────────────────────────────────────────────────────────────
 .env
 *.token

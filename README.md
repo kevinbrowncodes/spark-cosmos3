@@ -103,7 +103,27 @@ docker-compose.yml          # the deployment — pinned upstream image + serve c
 config/neg.json             # negative prompt (Cosmos Appendix B.6 structure)
 scripts/download_models.sh  # re-fetch the 33 GB weights into the expected layout
 examples/generate.sh        # curl-based submit/poll/download client
+CLAUDE.md                   # operational context for Claude Code sessions
+docs/api.md                 # full /v1/videos parameter reference (from OpenAPI + source)
+docs/responses.md           # real captured API payloads
+docs/spark-notes.md         # GB10 unified-memory quirks and runbook
+docs/container.md           # the vllm-omni image: lineage, versions, runtime flags
+docs/prompting.md           # the structured prompt format Cosmos was trained on
+docs/cosmos-framework.md    # survey of NVIDIA's native train/serve stack (unused here)
+docs/cosmos-3-technical-report.md  # full technical report as markdown (PDF is local-only)
+docs/cosmos-3-quick-reference.md   # deployment-focused summary of the report
 ```
+
+## Further reading
+
+- [Cosmos 3 technical report](https://arxiv.org/abs/2606.02800) — sampling
+  params (Table 21), negative prompt structure (Appendix B.6).
+  [PDF](https://research.nvidia.com/labs/cosmos-lab/cosmos3/technical-report.pdf)
+- [vLLM-Omni docs](https://docs.vllm.ai/projects/vllm-omni/en/stable/) and
+  [video API internals](https://deepwiki.com/vllm-project/vllm-omni/6.3-image-and-video-generation-apis)
+- [NVIDIA cosmos cookbook](https://github.com/nvidia/cosmos) — inference
+  benchmarks and recipes
+- [nvidia/Cosmos3-Nano model card](https://huggingface.co/nvidia/Cosmos3-Nano)
 
 ## Troubleshooting
 
