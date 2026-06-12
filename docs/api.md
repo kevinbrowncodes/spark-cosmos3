@@ -69,6 +69,31 @@ part), `lora`, and RIFE post-interpolation: `enable_frame_interpolation`,
 ## Job lifecycle
 
 `queued` → `in_progress` → `completed` (then GET `…/content`), or
-`failed` / `error` / `cancelled`. The `progress` field is unreliable (stays 0
-during denoising) — gauge progress from `docker logs cosmos3-api` (tqdm shows
-step/total, ~46 s/step at 50 steps).
+`failed` / `error` / `cancelled`.
+
+### Progress: the server field is dead — use the sidecar
+
+The `progress` field is **never updated during generation** (verified in
+vllm-omni 0.21.0 source and upstream main, 2026-06-12: it defaults to 0 in
+`protocol/videos.py:385` and is written once, to 100, at completion in
+`api_server.py:2528-2540`; no flag or extra_params changes this).
+`stage_durations` / `inference_time_s` / `peak_memory_mb` are likewise
+completion-only. The `"seconds": "4"` in status payloads is an unused default
+(ignored whenever `num_frames` is sent).
+
+Real per-step progress is served by our **progress sidecar**
+(`progress-sidecar/`, container `cosmos3-progress`), which parses the tqdm
+denoise bar from the cosmos3-api logs:
+
+```
+GET :8001/progress
+{"active": true, "video_id": "video_gen_…", "step": 12, "total": 50,
+ "percent": 24, "seconds_per_step": 46.1, "eta_s": 1752.2, "age_s": 3.1}
+```
+
+Semantics: `active` = denoise running and data fresh (<180 s); `step==total`
+with `active: false` means the job is in the VAE/audio/encode tail (minutes);
+`video_id` is best-effort (single-job server, taken from recent access logs).
+
+Measured step times: **~46 s/step at 704×1280×189f**, **~14.4 s/step at
+480×832×190f** (≈3.2× faster; 480p jobs complete in ~13 min end-to-end).

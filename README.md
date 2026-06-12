@@ -99,6 +99,7 @@ From the Cosmos Technical Report, Table 21 (Cosmos3-Nano audio-visual):
 
 ```
 docker-compose.yml          # the deployment — pinned upstream image + serve command
+progress-sidecar/           # serves real per-step progress on :8001 (vLLM-Omni's progress field is static)
 .env.example                # HF_TOKEN and path overrides (copy to .env)
 config/neg.json             # negative prompt (Cosmos Appendix B.6 structure)
 scripts/download_models.sh  # re-fetch the 33 GB weights into the expected layout

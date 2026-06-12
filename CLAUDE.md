@@ -26,8 +26,11 @@ NVIDIA Cosmos 3 Nano video+audio generation, served on a DGX Spark
   `use_duration_template` (default true) append "This video is of HxW
   resolution." / duration text to the prompt — the pipeline disables both so
   explicit size/num_frames are honoured.
-- The `progress` field in job status can sit at 0 while denoising is clearly
-  advancing in the container logs. Trust the logs, not `progress`.
+- The `progress` field in job status is **never** updated during generation
+  (vllm-omni doesn't implement it — verified in source). Real per-step
+  progress comes from our sidecar: `GET :8001/progress` (container
+  `cosmos3-progress`, code in `progress-sidecar/`), which parses the tqdm bar
+  in the cosmos3-api logs.
 
 ## Memory operations (the #1 operational hazard)
 

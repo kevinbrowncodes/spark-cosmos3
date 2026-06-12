@@ -43,3 +43,23 @@ services:
       - "8000"
       - --init-timeout
       - "1800"
+
+  # Real per-step progress for clients. vLLM-Omni never updates the
+  # /v1/videos `progress` field during generation; the only live progress is
+  # the tqdm bar in cosmos3-api's logs. This sidecar tails those logs via the
+  # Docker socket and serves GET /progress on :8001 (see progress-sidecar/).
+  # NOTE: mounting docker.sock grants the sidecar Docker-API access (host-root
+  # equivalent) — acceptable on this private LAN box, keep the image minimal.
+  progress:
+    build: ./progress-sidecar
+    image: spark-cosmos3-progress:latest
+    container_name: cosmos3-progress
+    restart: unless-stopped
+    ports:
+      - "8001:8001"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      - COSMOS_CONTAINER=cosmos3-api
+    depends_on:
+      - cosmos3
