@@ -54,6 +54,11 @@ EXTRA_PARAMS = json.dumps(
 
 app = FastAPI(title="cosmos-gateway")
 
+# Per-job prompt provenance, merged into /jobs/{id} responses so pollers see
+# it too (in-memory; lost on gateway restart — submit response is canonical).
+_JOB_META: dict[str, dict] = {}
+_JOB_META_MAX = 256
+
 
 def _read_data(name: str) -> str:
     path = DATA / name
@@ -86,10 +91,11 @@ async def generate(
     image_media_type = input_reference.content_type or "image/png"
     audio_style = _read_data("audio.txt")
     prompt_source = "prose"
+    fallback_reason = "disabled_by_request"  # default when upsample=false
 
     # Structured-prompt upgrade path (tech report §6.3.2): expand the prose
     # brief into the Appendix A JSON via the upsampler. Any failure falls
-    # back to the prose path below.
+    # back to the prose path below, with the reason reported to the client.
     full_prompt = None
     if upsample:
         try:
@@ -97,7 +103,7 @@ async def generate(
             width, height = int(width_s), int(height_s)
         except ValueError:
             raise HTTPException(400, f"invalid size: {size!r} (expected WxH)")
-        structured = await upsampler.upsample(
+        structured, fallback_reason = await upsampler.upsample(
             prompt=prompt.rstrip(),
             image_b64=base64.standard_b64encode(image_bytes).decode(),
             image_media_type=image_media_type,
@@ -138,6 +144,17 @@ async def generate(
         raise HTTPException(resp.status_code, resp.text)
     job = resp.json()
     job["prompt_source"] = prompt_source  # "upsampled" | "prose"
+    # null when upsampled; otherwise why the gateway used the prose defaults:
+    # "disabled_by_request" | "no_api_key" | "refusal" | "invalid_json" | "api_error: …"
+    job["upsample_fallback_reason"] = None if prompt_source == "upsampled" else fallback_reason
+
+    if video_id := job.get("id"):
+        while len(_JOB_META) >= _JOB_META_MAX:
+            _JOB_META.pop(next(iter(_JOB_META)))
+        _JOB_META[video_id] = {
+            "prompt_source": job["prompt_source"],
+            "upsample_fallback_reason": job["upsample_fallback_reason"],
+        }
     return job
 
 
@@ -164,6 +181,9 @@ async def job_status(video_id: str):
                     status["eta_s"] = p.get("eta_s")
             except Exception:
                 pass  # sidecar down -> serve upstream status unmodified
+
+    if meta := _JOB_META.get(video_id):
+        status.update(meta)
     return status
 
 

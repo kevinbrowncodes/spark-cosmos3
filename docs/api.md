@@ -14,7 +14,7 @@ sampling params and correct field names, and forwards to :8000.
 
 | Method | Path | Notes |
 |---|---|---|
-| POST | `/generate` | multipart: `input_reference` (file), `prompt`; optional `size` (default 720x1280), `num_frames` (default 189, clamped 5–300), `num_inference_steps` (default 50), `generate_sound` (default true), `seed`, `upsample` (default true). Returns the upstream job JSON (incl. the final assembled `prompt`) plus `prompt_source: "upsampled" \| "prose"`. |
+| POST | `/generate` | multipart: `input_reference` (file), `prompt`; optional `size` (default 720x1280), `num_frames` (default 189, clamped 5–300), `num_inference_steps` (default 50), `generate_sound` (default true), `seed`, `upsample` (default true). Returns the upstream job JSON (incl. the final assembled `prompt`) plus `prompt_source: "upsampled" \| "prose"` and `upsample_fallback_reason` (`null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`). Both fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart). |
 | GET | `/jobs/{id}` | upstream status with **real progress merged from the sidecar** when fresh + id-matched (`progress_source: "sidecar"`, `eta_s`); holds at 99 during the VAE/audio/encode tail |
 | GET | `/jobs/{id}/content` | streams the MP4 |
 | DELETE | `/jobs/{id}` | passthrough delete/cancel |

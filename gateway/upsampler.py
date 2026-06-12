@@ -138,14 +138,15 @@ async def upsample(
     fps: int,
     audio_style: str,
     generate_sound: bool,
-) -> str | None:
+) -> tuple[str | None, str | None]:
     """Expand a prose brief into the structured JSON prompt.
 
-    Returns the JSON string to send as the Cosmos `prompt`, or None on any
-    failure (caller falls back to the prose path).
+    Returns (json_string, None) on success, or (None, reason) on any
+    failure — the caller falls back to the prose path and reports the
+    reason to the client.
     """
     if not available():
-        return None
+        return None, "no_api_key"
 
     user_text = build_user_text(
         prompt, width, height, num_frames, fps, audio_style, generate_sound
@@ -174,18 +175,19 @@ async def upsample(
             ],
         )
     except Exception as exc:
-        print(f"upsampler: API call failed, falling back to prose: {exc}", flush=True)
-        return None
+        reason = f"api_error: {type(exc).__name__}: {exc}"
+        print(f"upsampler: falling back to prose — {reason}", flush=True)
+        return None, reason
 
     if message.stop_reason == "refusal":
         print("upsampler: refusal, falling back to prose", flush=True)
-        return None
+        return None, "refusal"
 
     text = next((b.text for b in message.content if b.type == "text"), "")
     data = _extract_json(text)
     if not data or "scene_imagination" not in data:
         print("upsampler: no valid JSON in response, falling back to prose", flush=True)
-        return None
+        return None, "invalid_json"
 
     # Media controls are deterministic — set them from the request rather
     # than trusting the LLM to copy them (it sometimes leaves the template's
@@ -197,4 +199,4 @@ async def upsample(
     if not generate_sound:
         data["audio_description"] = ""
 
-    return json.dumps(data, ensure_ascii=False)
+    return json.dumps(data, ensure_ascii=False), None
