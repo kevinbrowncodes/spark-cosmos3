@@ -4,6 +4,25 @@ Extracted from this server's own `/openapi.json` and the installed
 `vllm_omni` source (image `vllm/vllm-omni:cosmos3`), 2026-06-12. The upstream
 docs are thinner than this — the server is the source of truth.
 
+## The gateway (:8002) — what clients should actually call
+
+Clients should not talk to vLLM-Omni directly. The gateway (`gateway/`,
+container `cosmos3-gateway`) owns the request contract — it applies
+`data/neg.json`, appends `data/audio.txt` to the prompt when sound is on
+(unless the prompt already has an `AUDIO:` section), sets the Table 21
+sampling params and correct field names, and forwards to :8000.
+
+| Method | Path | Notes |
+|---|---|---|
+| POST | `/generate` | multipart: `input_reference` (file), `prompt`; optional `size` (default 720x1280), `num_frames` (default 189, clamped 5–300), `num_inference_steps` (default 50), `generate_sound` (default true), `seed`, `upsample` (default true). Returns the upstream job JSON (incl. the final assembled `prompt`) plus `prompt_source: "upsampled" \| "prose"`. |
+| GET | `/jobs/{id}` | upstream status with **real progress merged from the sidecar** when fresh + id-matched (`progress_source: "sidecar"`, `eta_s`); holds at 99 during the VAE/audio/encode tail |
+| GET | `/jobs/{id}/content` | streams the MP4 |
+| DELETE | `/jobs/{id}` | passthrough delete/cancel |
+| GET | `/health` | `{"gateway": "ok", "cosmos": true}` |
+
+Everything below documents the raw vLLM-Omni API behind the gateway —
+needed for maintaining the gateway itself, not for clients.
+
 ## Endpoints
 
 | Method | Path | Purpose |
@@ -30,7 +49,7 @@ All values are strings (multipart). Image conditioning goes in the
 | Field | Type | Our value | Notes |
 |---|---|---|---|
 | `prompt` | string | (required) | |
-| `negative_prompt` | string | contents of `config/neg.json` | server default is **empty** — always send ours |
+| `negative_prompt` | string | contents of `data/neg.json` | server default is **empty** — always send ours |
 | `size` | "WxH" | `720x1280` | server may snap to valid dims (real jobs come back `704x1280`); auto-calculated from input aspect ratio capped at 720·1280 area if omitted |
 | `num_frames` | int | 5–300 | 189 ≈ 7.9 s |
 | `fps` | int | `24` | |

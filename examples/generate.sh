@@ -17,9 +17,15 @@ INPUT_IMAGE="${1:?usage: generate.sh <input_image> \"<prompt>\" [output.mp4]}"
 PROMPT="${2:?usage: generate.sh <input_image> \"<prompt>\" [output.mp4]}"
 OUTPUT="${3:-output.mp4}"
 
-NEG_JSON="$(dirname "$0")/../config/neg.json"
+NEG_JSON="$(dirname "$0")/../data/neg.json"
+AUDIO_TXT="$(dirname "$0")/../data/audio.txt"
 NUM_FRAMES=189          # ≈7.9 s @ 24 fps (clamp: 5–300)
 FPS=24
+
+# Constant audio directive: ambient only, no dialogue (see data/audio.txt).
+PROMPT="$PROMPT
+
+$(cat "$AUDIO_TXT")"
 
 echo "Submitting job to $COSMOS_API ..."
 VIDEO_ID=$(curl -sf -X POST "$COSMOS_API" \

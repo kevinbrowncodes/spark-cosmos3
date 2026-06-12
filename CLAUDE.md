@@ -5,12 +5,30 @@ NVIDIA Cosmos 3 Nano video+audio generation, served on a DGX Spark
 
 ## Architecture — read this first
 
-- **There is no custom server code in this repo or anywhere else.** The HTTP
-  API is vLLM-omni's built-in OpenAI-style video API, served directly by the
-  upstream Docker Hub image `vllm/vllm-omni:cosmos3` (pinned by digest in
-  docker-compose.yml). Don't go looking for a FastAPI app to edit.
+- Three containers (one compose file): `cosmos3-api` (vLLM-omni engine,
+  :8000), `cosmos3-gateway` (canonical request layer, :8002 — **clients call
+  this**), `cosmos3-progress` (log-parsing progress sidecar, :8001, consumed
+  by the gateway).
+- **This repo owns the request contract via the gateway** (`gateway/`):
+  neg.json + audio house style + Table 21 params + correct field names are
+  applied server-side here. Clients send only image/prompt/size/frames/steps/
+  sound-toggle to `POST :8002/generate` and poll `GET :8002/jobs/{id}`
+  (which has *real* progress merged from the sidecar).
+- The engine itself has no custom code — it's the upstream Docker Hub image
+  `vllm/vllm-omni:cosmos3` (pinned by digest in docker-compose.yml) serving
+  vLLM-omni's built-in `/v1/videos` API.
 - The canonical *client* lives in a different repo:
   `ogtv-studios/pipeline/cosmos_client.py`.
+- **`data/` is canonical config.** The runtime copies the pipeline actually
+  reads live in `~/Documents/cosmos-media/` (mounted into the pipeline
+  container) — deploy artifacts, not sources. After any change:
+  `./scripts/sync_config.sh` (use `--check` to detect drift).
+  - `data/neg.json` — negative prompt; NVIDIA benchmark-tuned (Appendix
+    B.6), never hand-edit.
+  - `data/audio.txt` — constant audio directive appended to prompts:
+    ambient only, no dialogue/music. Audio is steered through prompt text
+    (there is no audio_description API field); this block is the standing
+    house style.
 - Weights: 33 GB at `~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/snapshots/main/`
   — note the **non-standard `snapshots/main`** layout (plain files, not a
   commit-hash snapshot). The serve command hardcodes this path.

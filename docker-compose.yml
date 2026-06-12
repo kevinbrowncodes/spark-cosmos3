@@ -50,6 +50,28 @@ services:
   # Docker socket and serves GET /progress on :8001 (see progress-sidecar/).
   # NOTE: mounting docker.sock grants the sidecar Docker-API access (host-root
   # equivalent) — acceptable on this private LAN box, keep the image minimal.
+  # Canonical request layer — what clients should call. Applies the house
+  # contract (neg.json, audio style, Table 21 params, correct field names)
+  # and merges real progress from the sidecar into job status. See gateway/.
+  gateway:
+    build: ./gateway
+    image: spark-cosmos3-gateway:latest
+    container_name: cosmos3-gateway
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    volumes:
+      - ./data:/data:ro   # repo working copy IS the deployed contract
+    environment:
+      - COSMOS_URL=http://cosmos3:8000
+      - SIDECAR_URL=http://progress:8001
+      # Prompt upsampler (Anthropic API). Empty key = upsampling silently
+      # disabled, prose path used. Model override: UPSAMPLER_MODEL.
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+    depends_on:
+      - cosmos3
+      - progress
+
   progress:
     build: ./progress-sidecar
     image: spark-cosmos3-progress:latest

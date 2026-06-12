@@ -54,7 +54,7 @@ appearance/relationship/location/pose/action/state_changes/clothing/expression
 fields), plus `background_setting`, `lighting`, `aesthetics`,
 `cinematography`.
 
-**Our `config/neg.json` is this Appendix B.6 prompt** — verified structurally
+**Our `data/neg.json` is this Appendix B.6 prompt** — verified structurally
 identical (same 5 top-level keys, 3 subject entries, matching text).
 Takeaways: don't hand-edit it (it's benchmark-tuned, not prose), and don't
 assume it transfers to other Cosmos variants (Super-I2V and action modes use

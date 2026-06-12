@@ -31,7 +31,7 @@ Top-level fields the captioner used in training:
 | `comprehensive_t2i_caption` | natural-language summary of the structured fields |
 | `resolution` / `aspect_ratio` | size metadata |
 
-Note this is the same field family as our negative prompt (`config/neg.json`)
+Note this is the same field family as our negative prompt (`data/neg.json`)
 — the negative prompt is a *negative instance* of this schema. That symmetry
 is why it works.
 
@@ -68,10 +68,14 @@ guidance: describe the world, then its evolution, then what it sounds like.
   sound) describe the audio. Avoid prompt text about resolution or duration —
   those are request fields, and our client disables the resolution/duration
   prompt templates (`use_resolution_template/use_duration_template: false`).
-- **Upgrade path:** add an upsampler step in the pipeline — an LLM call that
-  converts the short creative brief into the Appendix A JSON (the full
-  template to copy is in the report markdown, Appendix B.1) — and send that
-  JSON as the `prompt`. This is exactly what NVIDIA does in production.
-- **Negative prompt:** keep `config/neg.json` as-is (benchmark-tuned, Appendix
+- **Upsampling is implemented in the gateway** (`gateway/upsampler.py`):
+  `/generate` expands the prose brief into the Appendix B.1 structured JSON
+  via the Anthropic API (Claude, the same vendor NVIDIA used), grounded on
+  the seed image, with the audio house style folded into the
+  `audio_description` constraint. Requires `ANTHROPIC_API_KEY` in `.env`;
+  without it (or on any failure) the gateway falls back to the prose path.
+  Opt out per request with `upsample=false`; check `prompt_source` in the
+  job response to see which path ran.
+- **Negative prompt:** keep `data/neg.json` as-is (benchmark-tuned, Appendix
   B.6). Don't extend it with ad-hoc terms; quality issues are better attacked
   from the positive prompt's structure.

@@ -17,12 +17,23 @@ wheels do not work on this machine). The image is pinned by digest in
 [docker-compose.yml](docker-compose.yml).
 
 ```
-client ──POST /v1/videos──▶ cosmos3-api (vllm serve, port 8000)
-       ◀─poll /v1/videos/{id}, download /v1/videos/{id}/content─┘
+client ──POST /generate──▶ cosmos3-gateway :8002 ──▶ cosmos3-api :8000 (vllm serve)
+       ◀─poll /jobs/{id} (real progress merged)─┐         │
+                                                └── cosmos3-progress :8001
+                                                    (parses denoise tqdm from logs)
 
 volumes:  ~/.cache/huggingface  → /root/.cache/huggingface   (weights)
-          ~/Documents/cosmos-media → /media                  (inputs, neg.json)
+          ~/Documents/cosmos-media → /media                  (input images)
+          ./data → /data (gateway, ro)                       (neg.json, audio.txt)
 ```
+
+**Clients should call the gateway (:8002), not vLLM-Omni directly.** The
+gateway owns the request contract: it applies the benchmark-tuned negative
+prompt, the audio house style, the Table 21 sampling params, and the correct
+field names — clients send only creative intent (image, prompt, size,
+frames, steps, sound on/off). Its `/jobs/{id}` also merges **real** per-step
+progress from the log-parsing sidecar (vLLM-Omni's own `progress` field is
+static during generation).
 
 | | |
 |---|---|
@@ -83,7 +94,7 @@ From the Cosmos Technical Report, Table 21 (Cosmos3-Nano audio-visual):
 | `max_sequence_length` | `4096` | |
 | `generate_sound` | `true` | ⚠️ NOT `enable_audio` — common mistake |
 | `sound_duration` | `num_frames / fps` | seconds, as a string |
-| `negative_prompt` | contents of [config/neg.json](config/neg.json) | official Cosmos Appendix B.6 structure |
+| `negative_prompt` | contents of [data/neg.json](data/neg.json) | official Cosmos Appendix B.6 structure |
 | `extra_params` | `{"guardrails": false, "use_resolution_template": false, "use_duration_template": false}` | JSON string; disables guardrails/face-blur and resolution/duration templates so explicit size/frames are honoured |
 
 ### Endpoints
@@ -99,10 +110,13 @@ From the Cosmos Technical Report, Table 21 (Cosmos3-Nano audio-visual):
 
 ```
 docker-compose.yml          # the deployment — pinned upstream image + serve command
+gateway/                    # canonical request layer on :8002 — call this, not :8000
 progress-sidecar/           # serves real per-step progress on :8001 (vLLM-Omni's progress field is static)
 .env.example                # HF_TOKEN and path overrides (copy to .env)
-config/neg.json             # negative prompt (Cosmos Appendix B.6 structure)
+data/neg.json               # negative prompt (Cosmos Appendix B.6) — CANONICAL copy
+data/audio.txt              # constant audio directive: ambient only, no dialogue
 scripts/download_models.sh  # re-fetch the 33 GB weights into the expected layout
+scripts/sync_config.sh      # deploy data/* to the runtime location (cosmos-media)
 examples/generate.sh        # curl-based submit/poll/download client
 CLAUDE.md                   # operational context for Claude Code sessions
 docs/api.md                 # full /v1/videos parameter reference (from OpenAPI + source)
