@@ -26,6 +26,7 @@ data/ is mounted read-only from the repo, so the repo working copy is
 consumed directly — git is the deploy mechanism for the contract.
 """
 
+import asyncio
 import base64
 import json
 import os
@@ -188,12 +189,67 @@ async def job_status(video_id: str):
 
 
 @app.delete("/jobs/{video_id}")
-async def job_delete(video_id: str):
-    async with httpx.AsyncClient(timeout=10) as client:
+async def job_delete(video_id: str, hard: bool = False):
+    """Delete a job. With hard=true, also reclaim the GPU.
+
+    A plain delete removes the job record but vLLM-Omni does NOT cancel
+    in-flight GPU work — an orphaned render runs to completion and blocks
+    the queue. hard=true additionally restarts the engine (via the sidecar,
+    which holds the Docker socket) when this job is the one occupying the
+    GPU. Costs ~3.5 min of model reload and wipes the engine's in-memory
+    job records (any queued jobs vanish). Poll /health until cosmos=true
+    before submitting again.
+    """
+    async with httpx.AsyncClient(timeout=15) as client:
+        was_running = False
+        if hard:
+            # Only restart if this job is plausibly the active render:
+            # the oldest in_progress job (single-GPU engine = FIFO).
+            try:
+                listing = (await client.get(f"{COSMOS}/v1/videos")).json()
+                in_prog = sorted(
+                    (j for j in listing.get("data", []) if j.get("status") == "in_progress"),
+                    key=lambda j: j.get("created_at") or 0,
+                )
+                was_running = bool(in_prog) and in_prog[0].get("id") == video_id
+            except Exception:
+                was_running = True  # can't tell -> honor the hard request
+
         resp = await client.delete(f"{COSMOS}/v1/videos/{video_id}")
-    if resp.status_code >= 400:
-        raise HTTPException(resp.status_code, resp.text)
-    return resp.json() if resp.content else {"deleted": video_id}
+        if resp.status_code >= 400 and not hard:
+            raise HTTPException(resp.status_code, resp.text)
+        out = resp.json() if (resp.content and resp.status_code < 400) else {"deleted": video_id}
+
+        if hard:
+            engine_restarting = False
+            engine_down_confirmed = False
+            if was_running:
+                try:
+                    r = await client.post(f"{SIDECAR}/restart-engine", timeout=5)
+                    engine_restarting = r.status_code < 400
+                except Exception:
+                    pass
+                if engine_restarting:
+                    # The restart is async (sidecar thread → docker restart),
+                    # so /health stays green against the still-up old container
+                    # for a few seconds. Wait until the engine actually goes
+                    # down, so the client's subsequent "poll /health until
+                    # cosmos=true" is a true ready signal (not the pre-restart
+                    # container answering). Reload then takes ~3.5 min.
+                    for _ in range(30):
+                        await asyncio.sleep(1)
+                        try:
+                            h = await client.get(f"{COSMOS}/health", timeout=2)
+                            if h.status_code != 200:
+                                engine_down_confirmed = True
+                                break
+                        except Exception:
+                            engine_down_confirmed = True
+                            break
+            out["hard"] = True
+            out["engine_restarting"] = engine_restarting
+            out["engine_down_confirmed"] = engine_down_confirmed
+    return out
 
 
 @app.get("/jobs/{video_id}/content")

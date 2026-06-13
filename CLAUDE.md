@@ -45,10 +45,23 @@ NVIDIA Cosmos 3 Nano video+audio generation, served on a DGX Spark
   resolution." / duration text to the prompt — the pipeline disables both so
   explicit size/num_frames are honoured.
 - The `progress` field in job status is **never** updated during generation
-  (vllm-omni doesn't implement it — verified in source). Real per-step
-  progress comes from our sidecar: `GET :8001/progress` (container
-  `cosmos3-progress`, code in `progress-sidecar/`), which parses the tqdm bar
-  in the cosmos3-api logs.
+  (vllm-omni doesn't implement it — verified in source), and the logs give
+  **no live per-step signal** either: tqdm draws the denoise bar as one `\r`-
+  updated line with no newline until the loop ends, so docker holds it as a
+  single start-timestamped record and doesn't surface it (to `docker logs`,
+  `--since`, or a streaming follower) until denoise *finishes* — then every
+  step flushes at once. `PYTHONUNBUFFERED=1` does **not** fix this (it's
+  Python's buffer, not docker's record framing); earlier notes claiming it
+  made bars "live" were wrong — what looked live was only the terminal flush.
+  The sidecar (`GET :8001/progress`, container `cosmos3-progress`, code in
+  `progress-sidecar/`) is therefore a **terminal/tail signal only** (final
+  step + `step==total` → VAE/encode tail), not live motion. A moving bar must
+  come from an **elapsed-time estimate** (the gateway's job; see docs/api.md).
+- **Engine aborts don't stop GPU work.** DELETE on a job removes the record
+  but the denoise loop runs to completion, orphaned, blocking the queue
+  (measured: a 42-min 720p render completed after its abort). True
+  cancellation = `DELETE :8002/jobs/{id}?hard=true`, which restarts the
+  engine via the sidecar (~3.5 min reload, wipes queued job records).
 
 ## Memory operations (the #1 operational hazard)
 

@@ -27,6 +27,12 @@ services:
       - TRANSFORMERS_OFFLINE=1
       - HF_DATASETS_OFFLINE=1
       - NVIDIA_VISIBLE_DEVICES=all
+      # Unbuffered stderr so INFO/access log lines reach docker logs promptly
+      # (helps the sidecar attribute the current video_id and aids debugging).
+      # NOTE: this does NOT make the tqdm denoise bar stream live — that bar is
+      # one \r-updated line with no newline until the loop ends, so docker only
+      # surfaces it at completion regardless of buffering (see docs/api.md).
+      - PYTHONUNBUFFERED=1
     volumes:
       - ${HF_CACHE_DIR:-${HOME}/.cache/huggingface}:/root/.cache/huggingface
       - ${COSMOS_MEDIA_DIR:-${HOME}/Documents/cosmos-media}:/media

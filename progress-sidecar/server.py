@@ -79,9 +79,20 @@ def _handle_line(line: str) -> None:
         return
 
     vid = VID_RE.search(payload)
-    if vid:
+    # Don't learn job ids from failed lookups (404/405 probes of old jobs
+    # would steal attribution from the actually-running job).
+    if vid and '" 404' not in payload and '" 405' not in payload:
         with _lock:
-            _state["video_id"] = vid.group(0)
+            if _state.get("video_id") != vid.group(0):
+                _state["video_id"] = vid.group(0)
+                # New job: drop the previous job's bar so its last step is
+                # never attributed to this one. The new job's own bars
+                # repopulate within one tqdm refresh. (Replaces the old
+                # timestamp-comparison stale-guard, which nulled live renders
+                # because the bar's docker timestamp is frozen at denoise
+                # start — see the bar_wall note below.)
+                for k in ("step", "total", "percent", "seconds_per_step", "bar_wall"):
+                    _state.pop(k, None)
 
     if any(word in payload for word in EXCLUDE):
         return
@@ -98,7 +109,17 @@ def _handle_line(line: str) -> None:
                 "step": int(step),
                 "total": int(total),
                 "seconds_per_step": float(s_per_it) if s_per_it else None,
-                "log_ts": ts,
+                # Freshness is wall-clock at receipt, NOT the docker log
+                # timestamp: tqdm refreshes the whole bar via \r inside ONE log
+                # record, so every step shares that record's start-time stamp
+                # (using it, a render looks minutes stale within a step or two).
+                # NOTE: docker only delivers that record once it is newline-
+                # terminated — i.e. at the END of denoise — so in practice this
+                # whole block runs in a burst when the bar finishes, not live
+                # per step. The sidecar is a terminal/tail signal, not a live
+                # progress source (see docs/api.md). PYTHONUNBUFFERED does not
+                # change this; it governs Python's buffer, not docker framing.
+                "bar_wall": time.time(),
             }
         )
 
@@ -128,9 +149,10 @@ def _snapshot() -> dict:
     with _lock:
         s = dict(_state)
     now = time.time()
-    age = now - s["log_ts"] if "log_ts" in s else None
+    age = now - s["bar_wall"] if "bar_wall" in s else None
     step, total = s.get("step"), s.get("total")
     sps = s.get("seconds_per_step")
+
     eta = (total - step) * sps if (step is not None and total and sps) else None
     return {
         "active": bool(
@@ -139,14 +161,40 @@ def _snapshot() -> dict:
         "video_id": s.get("video_id"),
         "step": step,
         "total": total,
-        "percent": s.get("percent"),
+        "percent": s.get("percent") if step is not None else None,
         "seconds_per_step": sps,
         "eta_s": round(eta, 1) if eta is not None else None,
         "age_s": round(age, 1) if age is not None else None,
     }
 
 
+def _restart_engine() -> None:
+    try:
+        docker.from_env().containers.get(TARGET).restart(timeout=15)
+        print(f"sidecar: restarted '{TARGET}' (hard stop)", flush=True)
+    except Exception as exc:
+        print(f"sidecar: engine restart FAILED: {exc}", flush=True)
+
+
 class Handler(BaseHTTPRequestHandler):
+    def do_POST(self):  # noqa: N802 (http.server API)
+        if self.path == "/restart-engine":
+            # Hard stop: the only way to reclaim the GPU from an in-flight
+            # denoise (vLLM-Omni aborts don't cancel GPU work). Kills the
+            # running render AND wipes the engine's in-memory job records;
+            # model reload takes ~3.5 min. Called by the gateway's
+            # DELETE /jobs/{id}?hard=true.
+            threading.Thread(target=_restart_engine, daemon=True).start()
+            body = json.dumps({"restarting": TARGET}).encode()
+            self.send_response(202)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return
+        self.send_response(404)
+        self.end_headers()
+
     def do_GET(self):  # noqa: N802 (http.server API)
         if self.path == "/health":
             self.send_response(200)

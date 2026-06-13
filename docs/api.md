@@ -17,7 +17,8 @@ sampling params and correct field names, and forwards to :8000.
 | POST | `/generate` | multipart: `input_reference` (file), `prompt`; optional `size` (default 720x1280), `num_frames` (default 189, clamped 5–300), `num_inference_steps` (default 50), `generate_sound` (default true), `seed`, `upsample` (default true). Returns the upstream job JSON (incl. the final assembled `prompt`) plus `prompt_source: "upsampled" \| "prose"` and `upsample_fallback_reason` (`null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`). Both fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart). |
 | GET | `/jobs/{id}` | upstream status with **real progress merged from the sidecar** when fresh + id-matched (`progress_source: "sidecar"`, `eta_s`); holds at 99 during the VAE/audio/encode tail |
 | GET | `/jobs/{id}/content` | streams the MP4 |
-| DELETE | `/jobs/{id}` | passthrough delete/cancel |
+| DELETE | `/jobs/{id}` | delete the job record. ⚠️ does NOT stop in-flight GPU work — vLLM-Omni aborts are bookkeeping only; an orphaned render runs to completion and blocks the queue |
+| DELETE | `/jobs/{id}?hard=true` | **hard stop**: deletes the record AND, if this job is the active render, restarts the engine via the sidecar to actually reclaim the GPU. Costs ~3.5 min model reload and wipes all queued job records. Response: `{"hard": true, "engine_restarting": bool, "engine_down_confirmed": bool}` — the gateway waits (≤30 s) for the engine to actually go down before returning, so `engine_down_confirmed: true` means the subsequent `GET /health` → `cosmos: true` is a real ready signal (not the pre-restart container still answering). Poll `/health` until `cosmos: true` before resubmitting |
 | GET | `/health` | `{"gateway": "ok", "cosmos": true}` |
 
 Everything below documents the raw vLLM-Omni API behind the gateway —
@@ -90,7 +91,7 @@ part), `lora`, and RIFE post-interpolation: `enable_frame_interpolation`,
 `queued` → `in_progress` → `completed` (then GET `…/content`), or
 `failed` / `error` / `cancelled`.
 
-### Progress: the server field is dead — use the sidecar
+### Progress: the server field is dead, and the logs only flush at the end
 
 The `progress` field is **never updated during generation** (verified in
 vllm-omni 0.21.0 source and upstream main, 2026-06-12: it defaults to 0 in
@@ -100,19 +101,36 @@ vllm-omni 0.21.0 source and upstream main, 2026-06-12: it defaults to 0 in
 completion-only. The `"seconds": "4"` in status payloads is an unused default
 (ignored whenever `num_frames` is sent).
 
-Real per-step progress is served by our **progress sidecar**
-(`progress-sidecar/`, container `cosmos3-progress`), which parses the tqdm
-denoise bar from the cosmos3-api logs:
+**There is no usable live per-step signal in the logs either.** tqdm renders
+the denoise bar as a *single line* updated in place with `\r`, emitting no
+newline until the loop ends. Docker captures that as **one log record,
+timestamped at the bar's start**, and does not surface it to any log consumer
+(`docker logs`, `--since`, or a streaming follower) until it is
+newline-terminated — i.e. when denoise *finishes* (or the engine dies). So
+mid-render every log reader sees nothing; at the end all the steps flush at
+once. `PYTHONUNBUFFERED=1` does **not** change this — it governs Python's own
+buffering, not docker's record framing. (Verified 2026-06-13: a real
+`in_progress` job showed `24/50` in full `docker logs` while `--since 5m`
+returned zero bar-lines.)
+
+So the **progress sidecar** (`progress-sidecar/`, container
+`cosmos3-progress`) cannot show smooth motion during a render. What it *is*
+reliable for is that terminal flush: it reports the **final** step and the
+`step==total → VAE/audio/encode tail` transition — a "denoise done, now
+finishing" signal.
 
 ```
 GET :8001/progress
-{"active": true, "video_id": "video_gen_…", "step": 12, "total": 50,
- "percent": 24, "seconds_per_step": 46.1, "eta_s": 1752.2, "age_s": 3.1}
+{"active": true, "video_id": "video_gen_…", "step": 50, "total": 50,
+ "percent": 100, "seconds_per_step": 12.5, "eta_s": 0.0, "age_s": 3.1}
 ```
 
-Semantics: `active` = denoise running and data fresh (<180 s); `step==total`
-with `active: false` means the job is in the VAE/audio/encode tail (minutes);
-`video_id` is best-effort (single-job server, taken from recent access logs).
+`age_s` is wall-clock since the sidecar last *received* a bar line (not the
+docker log timestamp, which is frozen at bar start); `video_id` is best-effort
+(single-job server, from recent access logs).
 
-Measured step times: **~46 s/step at 704×1280×189f**, **~14.4 s/step at
-480×832×190f** (≈3.2× faster; 480p jobs complete in ~13 min end-to-end).
+A **moving** progress bar therefore has to come from an elapsed-time estimate,
+not the logs — the gateway is the intended home for it. Measured step times
+for calibration: **~46 s/step at 704×1280×189f**, **~12.6 s/step at
+480×832×190f** (the ratio is ~3.7×, *not* the 2.25× pixel-volume ratio, so a
+single linear model under-predicts — calibrate per resolution).
