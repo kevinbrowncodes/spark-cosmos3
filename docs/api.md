@@ -15,7 +15,7 @@ sampling params and correct field names, and forwards to :8000.
 | Method | Path | Notes |
 |---|---|---|
 | POST | `/generate` | multipart: `input_reference` (file), `prompt`; optional `size` (default 720x1280), `num_frames` (default 189, clamped 5–300), `num_inference_steps` (default 50), `generate_sound` (default true), `seed`, `upsample` (default true). Returns the upstream job JSON (incl. the final assembled `prompt`) plus `prompt_source: "upsampled" \| "prose"` and `upsample_fallback_reason` (`null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`). Both fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart). |
-| GET | `/jobs/{id}` | upstream status with **real progress merged from the sidecar** when fresh + id-matched (`progress_source: "sidecar"`, `eta_s`); holds at 99 during the VAE/audio/encode tail |
+| GET | `/jobs/{id}` | upstream status with a **moving progress bar**: a gateway elapsed-time estimate (`progress_source: "estimate"`, `eta_s` = expected − elapsed) that climbs as the render runs, capped at 99; the log sidecar then pins it to 99 (`progress_source: "sidecar"`) once denoise finishes (the VAE/audio/encode tail), and it snaps to 100 on completion. Progress is `max(server, estimate)` so a future real server value would win |
 | GET | `/jobs/{id}/content` | streams the MP4 |
 | DELETE | `/jobs/{id}` | delete the job record. ⚠️ does NOT stop in-flight GPU work — vLLM-Omni aborts are bookkeeping only; an orphaned render runs to completion and blocks the queue |
 | DELETE | `/jobs/{id}?hard=true` | **hard stop**: deletes the record AND, if this job is the active render, restarts the engine via the sidecar to actually reclaim the GPU. Costs ~3.5 min model reload and wipes all queued job records. Response: `{"hard": true, "engine_restarting": bool, "engine_down_confirmed": bool}` — the gateway waits (≤30 s) for the engine to actually go down before returning, so `engine_down_confirmed: true` means the subsequent `GET /health` → `cosmos: true` is a real ready signal (not the pre-restart container still answering). Poll `/health` until `cosmos: true` before resubmitting |
@@ -129,8 +129,27 @@ GET :8001/progress
 docker log timestamp, which is frozen at bar start); `video_id` is best-effort
 (single-job server, from recent access logs).
 
-A **moving** progress bar therefore has to come from an elapsed-time estimate,
-not the logs — the gateway is the intended home for it. Measured step times
-for calibration: **~46 s/step at 704×1280×189f**, **~12.6 s/step at
-480×832×190f** (the ratio is ~3.7×, *not* the 2.25× pixel-volume ratio, so a
-single linear model under-predicts — calibrate per resolution).
+A **moving** progress bar therefore comes from an elapsed-time estimate, not
+the logs — implemented in the **gateway** (`/jobs/{id}`), with the sidecar kept
+as the terminal "denoise done" override:
+
+- `progress_source: "estimate"` — `min(99, elapsed/expected × 100)` where
+  `elapsed = now − created_at` and `expected = denoise + tail`, both scaling
+  with the job's pixel·frame volume `W·H·frames`:
+  - `denoise = steps · 13.02 · (vol/vol_ref)^1.6`
+  - `tail = 423 · (vol/vol_ref)` (VAE decode + audio + encode)
+  - `vol_ref = 832·480·189`. Anchored on one fully-measured job (832×480×189,
+    50 steps): sidecar caught **13.02 s/step** denoise, engine reported
+    **1073.8 s** end-to-end → tail ≈ 423 s. The exponent 1.6 reproduces the
+    measured **~46 s/step at 704×1280×189** and puts 720p at ~55 min
+    end-to-end (inside the measured 50–57 min band). Constants live at the top
+    of `gateway/server.py`; recalibrate by reading `seconds_per_step` from
+    `:8001/progress` + `inference_time_s` from the final status.
+  - `progress = max(server, estimate)`, monotonic, so a future real server
+    value wins. `eta_s = expected − elapsed`.
+  - Caveat: `created_at` is *submission* time. On this single-GPU box jobs run
+    one at a time with ~0 queue wait, so it ≈ denoise start; a job queued
+    behind another would over-count the wait (acceptable here).
+- `progress_source: "sidecar"` — when the sidecar's bar (id-matched, fresh)
+  reaches `step == total`, the gateway pins progress to **99** for the tail.
+- On `completed`, the upstream `progress` is already 100.

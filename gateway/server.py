@@ -30,6 +30,7 @@ import asyncio
 import base64
 import json
 import os
+import time
 from pathlib import Path
 
 import httpx
@@ -52,6 +53,45 @@ FIXED_PARAMS = {
 EXTRA_PARAMS = json.dumps(
     {"guardrails": False, "use_resolution_template": False, "use_duration_template": False}
 )
+
+# End-to-end time model for the elapsed-time progress estimate. vLLM-Omni
+# never moves the `progress` field during a render and the tqdm log bar only
+# flushes at the end (docs/api.md), so a *moving* bar must come from
+# elapsed/expected. expected = denoise + tail, both scaling with the job's
+# pixel·frame volume (W*H*frames):
+#
+#   denoise = steps * REF_S_PER_STEP * (vol/REF_VOLUME)**VOLUME_EXP
+#   tail    = REF_TAIL_S * (vol/REF_VOLUME)              [VAE decode+audio+encode]
+#
+# Anchored on one fully-measured job (832x480x189, 50 steps): the sidecar
+# caught 13.02 s/step denoise and the engine reported 1073.8 s end-to-end, so
+# tail ≈ 1074 − 50·13.02 ≈ 423 s. VOLUME_EXP=1.6 then reproduces the measured
+# ~46 s/step at 704x1280x189, and the model lands 720p at ~55 min end-to-end —
+# inside the measured 50–57 min band. Easy to recalibrate: rerun a job and read
+# seconds_per_step from :8001/progress + inference_time_s from the final status.
+_REF_VOLUME = 832 * 480 * 189
+_REF_S_PER_STEP = 13.02
+_VOLUME_EXP = 1.6
+_REF_TAIL_S = 423.0
+_DEFAULT_STEPS = 50  # used if the job's params were lost (gateway restart)
+_DEFAULT_FRAMES = 189
+
+
+def _parse_size(size) -> tuple[int | None, int | None]:
+    try:
+        w, h = str(size).lower().split("x")
+        return int(w), int(h)
+    except (ValueError, AttributeError):
+        return None, None
+
+
+def _expected_seconds(width: int, height: int, num_frames: int, steps: int) -> float:
+    vol = max(1, width * height * num_frames)
+    scale = vol / _REF_VOLUME
+    denoise = steps * _REF_S_PER_STEP * scale**_VOLUME_EXP
+    tail = _REF_TAIL_S * scale
+    return denoise + tail
+
 
 app = FastAPI(title="cosmos-gateway")
 
@@ -155,6 +195,11 @@ async def generate(
         _JOB_META[video_id] = {
             "prompt_source": job["prompt_source"],
             "upsample_fallback_reason": job["upsample_fallback_reason"],
+            # Internal: feed the /jobs elapsed-time progress estimate. Width/
+            # height come from the job's reported `size` at poll time (the
+            # engine may snap dims), so only steps + frames are kept here.
+            "num_inference_steps": num_inference_steps,
+            "num_frames": num_frames,
         }
     return job
 
@@ -167,24 +212,45 @@ async def job_status(video_id: str):
             raise HTTPException(resp.status_code, resp.text)
         status = resp.json()
 
-        # vLLM-Omni never updates `progress` during generation; merge the real
-        # value from the log-parsing sidecar when it's fresh and id-matched.
+        # vLLM-Omni never moves `progress` during generation, and the log bar
+        # only flushes at the end — so the *moving* bar is an elapsed-time
+        # estimate computed here, with the sidecar kept as a terminal "→99"
+        # override for the VAE/audio/encode tail.
         if status.get("status") == "in_progress":
+            meta = _JOB_META.get(video_id, {})
+            width, height = _parse_size(status.get("size"))
+            created = status.get("created_at")
+            if width and height and created:
+                steps = meta.get("num_inference_steps", _DEFAULT_STEPS)
+                frames = meta.get("num_frames", _DEFAULT_FRAMES)
+                expected = _expected_seconds(width, height, frames, steps)
+                elapsed = max(0.0, time.time() - float(created))
+                est = min(99, int(elapsed / expected * 100)) if expected > 0 else 0
+                # Monotonic + future-proof: if the engine ever reports real
+                # progress, the larger value wins.
+                status["progress"] = max(int(status.get("progress") or 0), est)
+                status["progress_source"] = "estimate"
+                status["eta_s"] = round(max(0.0, expected - elapsed), 1)
+
+            # Sidecar terminal/tail signal: its bar only reaches a log consumer
+            # once denoise finishes, so a fresh, id-matched step==total means
+            # "denoise done, finishing" — pin to 99 over the estimate.
             try:
                 p = (await client.get(f"{SIDECAR}/progress", timeout=2)).json()
                 fresh = p.get("age_s") is not None and p["age_s"] < 60
-                if p.get("video_id") == video_id and fresh and p.get("percent") is not None:
-                    pct = p["percent"]
-                    if p.get("step") == p.get("total") and not p.get("active"):
-                        pct = 99  # denoise done, VAE/audio/encode tail
-                    status["progress"] = max(int(status.get("progress") or 0), min(99, pct))
+                done = p.get("step") and p.get("total") and p["step"] >= p["total"]
+                if p.get("video_id") == video_id and fresh and done:
+                    status["progress"] = max(int(status.get("progress") or 0), 99)
                     status["progress_source"] = "sidecar"
-                    status["eta_s"] = p.get("eta_s")
+                    status["eta_s"] = 0.0
             except Exception:
-                pass  # sidecar down -> serve upstream status unmodified
+                pass  # sidecar down -> keep the estimate
 
+    # Expose only the client-facing meta fields (not the internal estimator
+    # params stored alongside them).
     if meta := _JOB_META.get(video_id):
-        status.update(meta)
+        status["prompt_source"] = meta.get("prompt_source")
+        status["upsample_fallback_reason"] = meta.get("upsample_fallback_reason")
     return status
 
 
