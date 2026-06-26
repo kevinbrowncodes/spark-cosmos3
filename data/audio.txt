@@ -1,4 +1,3 @@
 AUDIO:
-Natural ambient sound only, matching the scene — room tone and quiet
-environmental noise. No dialogue, no speech, no voices, no narration,
-no music, no soundtrack.
+Natural ambient sound only, matching the scene. No dialogue, no speech, no voices, no narration,
+no music, no soundtrack. No characters speak or move their lips.

@@ -13,6 +13,9 @@ checkpoints/
 huggingface/
 .cache/
 
+# ── Job logs (request/upsampler/cosmos chain, written by the gateway) ───
+data/logs/jobs/
+
 # ── Generated media ─────────────────────────────────────────────────────
 output/
 outputs/

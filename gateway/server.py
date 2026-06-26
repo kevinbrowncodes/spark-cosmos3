@@ -37,6 +37,7 @@ import httpx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+import job_logger
 import upsampler
 
 COSMOS = os.environ.get("COSMOS_URL", "http://cosmos3:8000")
@@ -104,6 +105,11 @@ _JOB_META_MAX = 256
 def _read_data(name: str) -> str:
     path = DATA / name
     return path.read_text().strip() if path.exists() else ""
+
+
+@app.get("/audio")
+async def audio_config():
+    return {"default_enabled": True, "directive": _read_data("audio.txt")}
 
 
 @app.get("/health")
@@ -201,6 +207,21 @@ async def generate(
             "num_inference_steps": num_inference_steps,
             "num_frames": num_frames,
         }
+        job_logger.write(
+            job_id=video_id,
+            prose_prompt=prompt,
+            size=size,
+            num_frames=num_frames,
+            num_inference_steps=num_inference_steps,
+            generate_sound=generate_sound,
+            seed=form["seed"],
+            upsample=upsample,
+            image_filename=input_reference.filename,
+            image_media_type=image_media_type,
+            upsampler_output=full_prompt if prompt_source == "upsampled" else None,
+            upsampler_fallback_reason=job["upsample_fallback_reason"],
+            cosmos_response=job,
+        )
     return job
 
 
@@ -285,6 +306,14 @@ async def job_delete(video_id: str, hard: bool = False):
         if resp.status_code >= 400 and not hard:
             raise HTTPException(resp.status_code, resp.text)
         out = resp.json() if (resp.content and resp.status_code < 400) else {"deleted": video_id}
+
+        if not hard:
+            # Confirm the engine actually dropped the job (soft delete only).
+            try:
+                check = await client.get(f"{COSMOS}/v1/videos/{video_id}", timeout=5)
+                out["confirmed_stopped"] = check.status_code == 404
+            except Exception:
+                out["confirmed_stopped"] = False
 
         if hard:
             engine_restarting = False
