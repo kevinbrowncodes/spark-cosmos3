@@ -43,6 +43,21 @@ Docker-first. Reference hardware: 8× H100 80 GB.
   recommends in the cookbook for API workloads, and it's what the
   `/v1/videos` contract (and our pipeline) is built on.
 
+## Vendored components
+
+We do not run `cosmos-framework` as a dependency, but we vendor a small slice of it
+into this repo to stay byte-faithful to NVIDIA's upsampler recipe:
+
+| Item | Upstream path | Vendored as |
+|---|---|---|
+| Dense I2V prompt template | `cosmos_framework/inference/prompting_templates/external_api/t2v_i2v_video_prompt.txt` | `data/upsampler_template.txt` |
+| JSON caption schema | `cosmos_framework/inference/prompting_templates/external_api/t2v_i2v_video_json_schema.json` | `data/upsampler_schema.json` |
+| `RESOLUTION_RATIO_DICT` | `cosmos_framework/inference/prompt_upsampling.py` (lines 59–88) | `data/resolution_ratio_dict.json` |
+| Pinning logic (`_apply_t2v_output_parameters`) | same | transcribed into `gateway/upsampler.py` |
+
+Provenance (upstream URLs, sha256, pull dates): `data/SOURCES.md`
+Drift check: `./scripts/check_upsampler_sources.sh`
+
 ## Local resources
 
 - Cookbook notebooks (local clone `~/cosmos/cookbooks/cosmos3/`):
