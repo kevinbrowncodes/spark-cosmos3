@@ -33,3 +33,19 @@ No brace-style fallback needed — substitution values are never re-scanned by `
 
 Fills the `$json_template` placeholder in `upsampler_template.txt`. Must be vendored alongside the
 template — they travel together.
+
+---
+
+## resolution_ratio_dict.json
+
+| Field | Value |
+|---|---|
+| Upstream repo | `github.com/nvidia/cosmos-framework` (branch `main`) |
+| Upstream path | `cosmos_framework/inference/prompt_upsampling.py` (variable `RESOLUTION_RATIO_DICT`, lines 59–88) |
+| Raw URL | `https://raw.githubusercontent.com/nvidia/cosmos-framework/main/cosmos_framework/inference/prompt_upsampling.py` |
+| sha256 (source file) | `9e120a0436403ae3f82f22b5158d4409987e9453c2eb69654ca382e179c74942` |
+| Pulled | 2026-06-27 |
+
+Extracted from the Python source via `ast.literal_eval` and serialised as JSON. The canonical
+deployment size `720x1280` vertical maps to tier `"720"`, aspect `"9,16"` → `{"W": 720, "H": 1280}`.
+`(W, H)` pairs are unique across all tiers, so reverse-lookup is unambiguous.
