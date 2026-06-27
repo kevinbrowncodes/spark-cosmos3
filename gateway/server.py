@@ -27,7 +27,6 @@ consumed directly — git is the deploy mechanism for the contract.
 """
 
 import asyncio
-import base64
 import json
 import os
 import time
@@ -152,8 +151,7 @@ async def generate(
             raise HTTPException(400, f"invalid size: {size!r} (expected WxH)")
         structured, fallback_reason = await upsampler.upsample(
             prompt=prompt.rstrip(),
-            image_b64=base64.standard_b64encode(image_bytes).decode(),
-            image_media_type=image_media_type,
+            image_bytes=image_bytes,
             width=width,
             height=height,
             num_frames=num_frames,

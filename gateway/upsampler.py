@@ -12,6 +12,7 @@ Failure of any kind returns None and the gateway falls back to the prose
 prompt path — upsampling can never block a render.
 """
 
+import base64
 import json
 import os
 import re
@@ -100,6 +101,35 @@ def _get_client() -> AsyncAnthropic:
     return _client
 
 
+# ---------------------------------------------------------------------------
+# Image helpers (Story 6)
+# ---------------------------------------------------------------------------
+
+_MAGIC: list[tuple[bytes, str]] = [
+    (b"\xff\xd8", "image/jpeg"),
+    (b"\x89PNG", "image/png"),
+    (b"RIFF", "image/webp"),  # WebP: RIFF????WEBP — prefix is enough
+]
+
+
+def _detect_media_type(data: bytes) -> str:
+    for magic, mime in _MAGIC:
+        if data[: len(magic)] == magic:
+            return mime
+    return "image/jpeg"  # safe fallback; Anthropic will reject if truly wrong
+
+
+def _image_block(image_bytes: bytes) -> dict:
+    return {
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": _detect_media_type(image_bytes),
+            "data": base64.standard_b64encode(image_bytes).decode("ascii"),
+        },
+    }
+
+
 # Appendix B.1 output template (video), verbatim structure.
 _OUTPUT_TEMPLATE = (
     '{"scene_imagination":"...","temporal_caption":"...","audio_description":"...",'
@@ -179,25 +209,19 @@ resolution={{"W":{width},"H":{height}}}.
 </output_json_template>"""
 
 
-def _extract_json(text: str) -> dict | None:
-    fence = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", text, re.DOTALL)
-    candidate = fence.group(1) if fence else None
-    if candidate is None:
-        start, end = text.find("{"), text.rfind("}")
-        if start == -1 or end <= start:
-            return None
-        candidate = text[start : end + 1]
-    try:
-        data = json.loads(candidate)
-    except json.JSONDecodeError:
-        return None
-    return data if isinstance(data, dict) else None
+def _extract_json(text: str) -> dict:
+    """Strip the ```json fence and parse. Raises ValueError on any parse or type failure."""
+    match = re.search(r"```json\s*(.*?)\s*```", text, re.DOTALL)
+    raw = match.group(1) if match else text.strip()
+    data = json.loads(raw)  # raises json.JSONDecodeError on bad JSON
+    if not isinstance(data, dict):
+        raise ValueError(f"expected dict, got {type(data).__name__}")
+    return data
 
 
 async def upsample(
     prompt: str,
-    image_b64: str,
-    image_media_type: str,
+    image_bytes: bytes,
     width: int,
     height: int,
     num_frames: int,
@@ -221,24 +245,22 @@ async def upsample(
         client = _get_client()
         message = await client.with_options(timeout=120.0).messages.create(
             model=MODEL,
-            max_tokens=16000,
-            thinking={"type": "adaptive"},
+            system="You are a helpful assistant.",  # framework SYSTEM_MESSAGE verbatim
             messages=[
                 {
                     "role": "user",
                     "content": [
-                        {
-                            "type": "image",
-                            "source": {
-                                "type": "base64",
-                                "media_type": image_media_type,
-                                "data": image_b64,
-                            },
-                        },
+                        _image_block(image_bytes),  # image first (framework order)
                         {"type": "text", "text": user_text},
                     ],
                 }
             ],
+            # Framework PromptUpsamplerConfig defaults. temperature + top_p + top_k
+            # together is intentional — matches what NVIDIA validated.
+            temperature=0.7,
+            top_p=0.8,
+            top_k=20,
+            max_tokens=8192,
         )
     except Exception as exc:
         reason = f"api_error: {type(exc).__name__}: {exc}"
@@ -250,14 +272,19 @@ async def upsample(
         return None, "refusal"
 
     text = next((b.text for b in message.content if b.type == "text"), "")
-    data = _extract_json(text)
-    if not data or "scene_imagination" not in data:
-        print("upsampler: no valid JSON in response, falling back to prose", flush=True)
+    try:
+        data = _extract_json(text)
+    except (ValueError, json.JSONDecodeError) as exc:
+        print(f"upsampler: JSON parse failed ({exc}), falling back to prose", flush=True)
+        return None, "upsampler_error"
+
+    if "scene_imagination" not in data:
+        print("upsampler: missing expected fields, falling back to prose", flush=True)
         return None, "invalid_json"
 
     # Media controls are deterministic — set them from the request rather
     # than trusting the LLM to copy them (it sometimes leaves the template's
-    # "Per task constraints" placeholders).
+    # "Per task constraints" placeholders). Replaced by _pin_output_params in Story 7.
     data["duration"] = _duration_mss(num_frames, fps)
     data["fps"] = fps
     data["aspect_ratio"] = _aspect(width, height)
