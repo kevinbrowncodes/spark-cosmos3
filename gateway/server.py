@@ -5,8 +5,6 @@ send creative intent — image, prompt, size, length — and the gateway applies
 the house contract before forwarding to vLLM-Omni:
 
 - negative prompt from data/neg.json (NVIDIA Appendix B.6, benchmark-tuned)
-- audio house style from data/audio.txt appended to the prompt
-  (ambient only, no dialogue) whenever sound is on
 - tuned sampling params (Table 21): guidance 6.0, flow_shift 10.0, fps 24
 - guardrails/template extra_params, correct field names
   (generate_sound/sound_duration — never enable_audio)
@@ -106,11 +104,6 @@ def _read_data(name: str) -> str:
     return path.read_text().strip() if path.exists() else ""
 
 
-@app.get("/audio")
-async def audio_config():
-    return {"default_enabled": True, "directive": _read_data("audio.txt")}
-
-
 @app.get("/health")
 async def health():
     async with httpx.AsyncClient(timeout=5) as client:
@@ -135,7 +128,6 @@ async def generate(
     num_frames = max(5, min(300, num_frames))
     image_bytes = await input_reference.read()
     image_media_type = input_reference.content_type or "image/png"
-    audio_style = _read_data("audio.txt")
     prompt_source = "prose"
     fallback_reason = "disabled_by_request"  # default when upsample=false
 
@@ -160,8 +152,6 @@ async def generate(
 
     if full_prompt is None:
         full_prompt = prompt.rstrip()
-        if generate_sound and audio_style and "AUDIO:" not in full_prompt:
-            full_prompt += "\n\n" + audio_style
 
     form = {
         "prompt": full_prompt,

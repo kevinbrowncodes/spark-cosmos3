@@ -103,10 +103,11 @@ docker-compose.yml
   this**), `cosmos3-progress` (log-parsing progress sidecar, :8001, consumed
   by the gateway).
 - **This repo owns the request contract via the gateway** (`gateway/`):
-  neg.json + audio house style + Table 21 params + correct field names are
-  applied server-side here. Clients send only image/prompt/size/frames/steps/
-  sound-toggle to `POST :8002/generate` and poll `GET :8002/jobs/{id}`
-  (which has *real* progress merged from the sidecar).
+  neg.json + Table 21 params + correct field names are applied server-side
+  here. Clients send only image/prompt/size/frames/steps/sound-toggle to
+  `POST :8002/generate` and poll `GET :8002/jobs/{id}` (which has *real*
+  progress merged from the sidecar). Audio description is owned by the
+  upsampler (Opus fills `audio_description` contextually per scene).
 - The engine itself has no custom code — it's the upstream Docker Hub image
   `vllm/vllm-omni:cosmos3` (pinned by digest in docker-compose.yml) serving
   vLLM-omni's built-in `/v1/videos` API.
@@ -118,10 +119,6 @@ docker-compose.yml
   `./scripts/sync_config.sh` (use `--check` to detect drift).
   - `data/neg.json` — negative prompt; NVIDIA benchmark-tuned (Appendix
     B.6), never hand-edit.
-  - `data/audio.txt` — constant audio directive appended to prompts:
-    ambient only, no dialogue/music. Audio is steered through prompt text
-    (there is no audio_description API field); this block is the standing
-    house style.
   - `data/story/` — feature story files (see Section 3).
 - Weights: 33 GB at `~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/snapshots/main/`
   — note the **non-standard `snapshots/main`** layout (plain files, not a
