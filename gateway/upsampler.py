@@ -15,8 +15,74 @@ prompt path — upsampling can never block a render.
 import json
 import os
 import re
+from pathlib import Path
+from string import Template
 
 from anthropic import AsyncAnthropic
+
+# ---------------------------------------------------------------------------
+# Official NVIDIA template-based prompt assembly (Story 5)
+# Transcribed from cosmos_framework.inference.prompt_upsampling lines 121–193.
+# Called by upsample() once _parse_size is wired in Story 7.
+# ---------------------------------------------------------------------------
+
+_DATA = Path(__file__).parent.parent / "data"
+TEMPLATE = Template((_DATA / "upsampler_template.txt").read_text(encoding="utf-8").rstrip("\n"))
+SCHEMA = (_DATA / "upsampler_schema.json").read_text(encoding="utf-8").rstrip("\n")
+RRD = json.loads((_DATA / "resolution_ratio_dict.json").read_text(encoding="utf-8"))
+
+I2V_INTRO = (
+    "Given the attached starting frame image and the user's natural-language request below"
+)
+I2V_IMAGE_NOTE = (
+    "\nIMPORTANT - IMAGE INPUT: The attached image is the first frame of the video. "
+    "Use it as visual ground truth for subject appearance, setting, lighting, and colors. "
+    "The natural-language request primarily describes temporal/action intent. "
+    "Your JSON must be consistent with what is visible in the image.\n"
+)
+
+
+def build_nl_description(
+    prompt: str,
+    *,
+    resolution: str,
+    aspect_ratio: str,
+    duration: str,
+    fps: int,
+) -> str:
+    params = [
+        f"resolution {resolution}",
+        f"aspect_ratio {aspect_ratio}",
+        f"duration {duration}",
+        f"fps {fps}",
+    ]
+    return f"{prompt.strip()}\n\nOutput parameters: {', '.join(params)}."
+
+
+def build_upsampler_prompt(
+    prompt: str,
+    *,
+    resolution: str,
+    aspect_ratio: str,
+    duration: str,
+    fps: int,
+) -> str:
+    """Assemble the official NVIDIA I2V upsampler prompt from vendored template."""
+    nl = build_nl_description(
+        prompt, resolution=resolution, aspect_ratio=aspect_ratio,
+        duration=duration, fps=fps,
+    )
+    rrd_text = json.dumps(
+        {r: {a: {"H": s["H"], "W": s["W"]} for a, s in ad.items()} for r, ad in RRD.items()},
+        indent=2,
+    )
+    return TEMPLATE.substitute(
+        intro=I2V_INTRO,
+        image_note=I2V_IMAGE_NOTE,
+        json_template=SCHEMA,
+        nl_description=nl,
+        resolution_ratio_dict=rrd_text,
+    )
 
 MODEL = os.environ.get("UPSAMPLER_MODEL", "claude-opus-4-8")
 
