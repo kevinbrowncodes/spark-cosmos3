@@ -41,7 +41,7 @@ docker-compose.yml
 5. **Every story must include a Testing Plan section** that calls out which test layers apply:
    - **Unit** — pytest tests for gateway logic: prompt assembly, field mapping, job state machine. Default: required for any new helper or transformation.
    - **Contract** — curl/httpx tests against a running gateway verifying request/response shape and field names. Default: required for any new endpoint or field change.
-   - **Smoke** — `num_inference_steps=4` end-to-end generation through the full stack. Default: required only when the generation path itself changes.
+   - **Smoke** — `num_inference_steps=35` end-to-end generation through the full stack. Default: required only when the generation path itself changes.
    - If a layer is not applicable, the Testing Plan must explicitly say so and explain why. **"No tests needed" is not an acceptable answer without justification.**
 6. A story is not **Done** until its Testing Plan tests are written, passing locally, and the story's Acceptance Criteria checkboxes are all checked.
 
@@ -194,7 +194,7 @@ N/A for memory on GB10. The only trustworthy check is **`free -h`**.
 ## 9. Performance (measured on this box)
 
 - 50-step 704x1280 clip: ~46 s/step ≈ 40 min denoising, 50–57 min end-to-end.
-- Smoke tests: use `num_inference_steps=4`.
+- Smoke tests: use `num_inference_steps=35`.
 
 ---
 

@@ -120,12 +120,15 @@ async def generate(
     prompt: str = Form(...),
     size: str = Form("720x1280"),
     num_frames: int = Form(189),
-    num_inference_steps: int = Form(50),
+    num_inference_steps: int = Form(35),
     generate_sound: bool = Form(True),
     seed: int | None = Form(None),
     upsample: bool = Form(True),
 ):
     num_frames = max(5, min(300, num_frames))
+
+    if num_inference_steps not in (35, 50):
+        raise HTTPException(400, f"num_inference_steps must be 35 (default) or 50 (high quality), got {num_inference_steps}")
 
     # Validate size + duration unconditionally (BUG-002: was only checked on
     # the upsampled path). Single source of truth: upsampler._parse_size.

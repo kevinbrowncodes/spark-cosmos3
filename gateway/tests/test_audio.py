@@ -56,7 +56,7 @@ def _post_generate(generate_sound: bool) -> tuple[dict, dict]:
                 data={
                     "prompt": "a cat walks slowly",
                     "generate_sound": str(generate_sound).lower(),
-                    "num_inference_steps": "4",
+                    "num_inference_steps": "35",
                     "upsample": "false",
                 },
                 files={"input_reference": ("test.png", _SMALL_PNG, "image/png")},
