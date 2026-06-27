@@ -130,83 +130,54 @@ def _image_block(image_bytes: bytes) -> dict:
     }
 
 
-# Appendix B.1 output template (video), verbatim structure.
-_OUTPUT_TEMPLATE = (
-    '{"scene_imagination":"...","temporal_caption":"...","audio_description":"...",'
-    '"subjects":[...],"background_setting":"...","lighting":{...},'
-    '"aesthetics":{...},"cinematography":{...},"style_medium":"...",'
-    '"artistic_style":"...","context":"...","actions":[...],'
-    '"text_and_signage_elements":[...],"segments":[...],"transitions":[...],'
-    '"resolution":"Per task constraints","aspect_ratio":"Per task constraints",'
-    '"duration":"Per task constraints","fps":"Per task constraints"}'
-)
+# ---------------------------------------------------------------------------
+# Size parsing and output param pinning (Story 7)
+# ---------------------------------------------------------------------------
+
+# Schema-allowed duration labels (from upsampler_schema.json duration enum).
+# At 24 fps this corresponds to a maximum of 240 frames (10 s × 24).
+_ALLOWED_DURATIONS = frozenset(f"{s}s" for s in range(2, 11))  # '2s'..'10s'
 
 
-def _duration_mss(num_frames: int, fps: int) -> str:
-    seconds = round(num_frames / fps)
-    return f"{seconds // 60}:{seconds % 60:02d}"
+def _parse_size(size: str, num_frames: int, fps: int) -> tuple[str, str, str]:
+    """Reverse-lookup size string e.g. '720x1280' → (tier, aspect_ratio, duration_label).
+
+    Returns ('720', '9,16', '7s') for size='720x1280', num_frames=189, fps=24.
+    Raises ValueError (→ HTTP 400) if size is not in RRD or duration is out of schema range.
+    """
+    try:
+        w_str, h_str = size.lower().split("x")
+        w, h = int(w_str), int(h_str)
+    except ValueError:
+        raise ValueError(f"size must be WxH (e.g. '720x1280'), got: {size!r}")
+    for tier, aspects in RRD.items():
+        for aspect, dims in aspects.items():
+            if dims["W"] == w and dims["H"] == h:
+                duration = f"{int(num_frames / fps)}s"
+                if duration not in _ALLOWED_DURATIONS:
+                    _max_dur = max(_ALLOWED_DURATIONS, key=lambda s: int(s[:-1]))
+                    raise ValueError(
+                        f"num_frames={num_frames} at fps={fps} → duration '{duration}', "
+                        f"which is outside the schema's allowed set ('2s'–{_max_dur!r}). "
+                        f"Maximum is {_max_dur} ({int(fps * int(_max_dur[:-1]))} frames at {fps} fps)."
+                    )
+                return tier, aspect, duration
+    supported = ", ".join(
+        f"{d['W']}x{d['H']}" for aspects in RRD.values() for d in aspects.values()
+    )
+    raise ValueError(f"size {size!r} not in RESOLUTION_RATIO_DICT. Supported: {supported}")
 
 
-def _aspect(width: int, height: int) -> str:
-    # Template uses nominal labels (NVIDIA's own example pairs "9,16" with 480x832).
-    if height > width:
-        return "9,16"
-    if width > height:
-        return "16,9"
-    return "1,1"
-
-
-def build_user_text(
-    description: str,
-    width: int,
-    height: int,
-    num_frames: int,
-    fps: int,
-    audio_style: str,
-    generate_sound: bool,
-) -> str:
-    """Assemble the Appendix B.1 I2V upsampler message."""
-    duration = _duration_mss(num_frames, fps)
-    aspect = _aspect(width, height)
-
-    if not generate_sound:
-        audio_constraint = 'Set audio_description to the empty string "" (no audio track will be generated).'
-    elif "AUDIO:" in description:
-        audio_constraint = (
-            "Derive audio_description from the AUDIO direction included in the "
-            "video description; do not invent sounds beyond it."
-        )
-    else:
-        house = " ".join(audio_style.split()) if audio_style else ""
-        house = house.removeprefix("AUDIO:").strip()  # header is for prose prompts
-        audio_constraint = (
-            f"audio_description must follow this standing direction: {house}"
-            if house
-            else "Describe natural ambient sound matching the scene."
-        )
-
-    return f"""<instructions>
-Prompt upsampler for an image-to-video model. Treat the attached starting frame
-as definitive visual ground truth and the text as temporal/action intent.
-Produce exactly one fenced JSON object that fully populates the template and
-satisfies all constraints.
-</instructions>
-<video_description>{description}</video_description>
-<task_constraints>
-1. Write scene_imagination first, anchoring visual facts to the image and
-temporal facts to the description.
-2. Write temporal_caption second as the timestamped M:SS playback timeline.
-3. Write audio_description third, aligned with the visual beats when possible.
-   {audio_constraint}
-4. Copy exactly: duration="{duration}", fps={fps}, aspect_ratio="{aspect}",
-resolution={{"W":{width},"H":{height}}}.
-5. Use only M:SS timing and keep all timed fields within duration.
-6. Ensure the first segment and earliest actions match the image at t=0.
-7. Preserve concrete facts from both the image and the description.
-</task_constraints>
-<output_json_template>
-{_OUTPUT_TEMPLATE}
-</output_json_template>"""
+def _pin_output_params(
+    data: dict, *, resolution: str, aspect_ratio: str, duration: str, fps: int
+) -> dict:
+    """Overwrite the four output fields with deterministic values from the request."""
+    pair = RRD[resolution][aspect_ratio]  # already validated by _parse_size
+    data["resolution"] = {"H": pair["H"], "W": pair["W"]}
+    data["aspect_ratio"] = aspect_ratio
+    data["duration"] = duration  # same value used in the prompt — single source of truth
+    data["fps"] = fps
+    return data
 
 
 def _extract_json(text: str) -> dict:
@@ -222,24 +193,30 @@ def _extract_json(text: str) -> dict:
 async def upsample(
     prompt: str,
     image_bytes: bytes,
-    width: int,
-    height: int,
+    size: str,
     num_frames: int,
     fps: int,
-    audio_style: str,
     generate_sound: bool,
 ) -> tuple[str | None, str | None]:
     """Expand a prose brief into the structured JSON prompt.
 
     Returns (json_string, None) on success, or (None, reason) on any
     failure — the caller falls back to the prose path and reports the
-    reason to the client.
+    reason to the client. The special reason 'invalid_size' signals that
+    the caller should return HTTP 400 rather than fall back to prose.
     """
     if not available():
         return None, "no_api_key"
 
-    user_text = build_user_text(
-        prompt, width, height, num_frames, fps, audio_style, generate_sound
+    try:
+        resolution, aspect_ratio, duration = _parse_size(size, num_frames, fps)
+    except ValueError as exc:
+        print(f"upsampler: invalid size — {exc}", flush=True)
+        return None, "invalid_size"
+
+    user_text = build_upsampler_prompt(
+        prompt, resolution=resolution, aspect_ratio=aspect_ratio,
+        duration=duration, fps=fps,
     )
     try:
         client = _get_client()
@@ -278,18 +255,13 @@ async def upsample(
         print(f"upsampler: JSON parse failed ({exc}), falling back to prose", flush=True)
         return None, "upsampler_error"
 
-    if "scene_imagination" not in data:
+    if "subjects" not in data:
         print("upsampler: missing expected fields, falling back to prose", flush=True)
         return None, "invalid_json"
 
-    # Media controls are deterministic — set them from the request rather
-    # than trusting the LLM to copy them (it sometimes leaves the template's
-    # "Per task constraints" placeholders). Replaced by _pin_output_params in Story 7.
-    data["duration"] = _duration_mss(num_frames, fps)
-    data["fps"] = fps
-    data["aspect_ratio"] = _aspect(width, height)
-    data["resolution"] = {"W": width, "H": height}
+    _pin_output_params(data, resolution=resolution, aspect_ratio=aspect_ratio,
+                       duration=duration, fps=fps)
     if not generate_sound:
         data["audio_description"] = ""
 
-    return json.dumps(data, ensure_ascii=False), None
+    return json.dumps(data, ensure_ascii=True), None

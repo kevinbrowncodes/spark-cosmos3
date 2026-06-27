@@ -144,21 +144,16 @@ async def generate(
     # back to the prose path below, with the reason reported to the client.
     full_prompt = None
     if upsample:
-        try:
-            width_s, height_s = size.lower().split("x")
-            width, height = int(width_s), int(height_s)
-        except ValueError:
-            raise HTTPException(400, f"invalid size: {size!r} (expected WxH)")
         structured, fallback_reason = await upsampler.upsample(
             prompt=prompt.rstrip(),
             image_bytes=image_bytes,
-            width=width,
-            height=height,
+            size=size,
             num_frames=num_frames,
             fps=FPS,
-            audio_style=audio_style,
             generate_sound=generate_sound,
         )
+        if fallback_reason == "invalid_size":
+            raise HTTPException(400, f"size {size!r} is not supported; see RESOLUTION_RATIO_DICT for valid sizes")
         if structured:
             full_prompt = structured
             prompt_source = "upsampled"
