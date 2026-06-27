@@ -126,6 +126,14 @@ async def generate(
     upsample: bool = Form(True),
 ):
     num_frames = max(5, min(300, num_frames))
+
+    # Validate size + duration unconditionally (BUG-002: was only checked on
+    # the upsampled path). Single source of truth: upsampler._parse_size.
+    try:
+        upsampler._parse_size(size, num_frames, FPS)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
     image_bytes = await input_reference.read()
     image_media_type = input_reference.content_type or "image/png"
     prompt_source = "prose"
