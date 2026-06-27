@@ -55,11 +55,11 @@ def _post_generate(generate_sound: bool) -> tuple[dict, dict]:
                 "/generate",
                 data={
                     "prompt": "a cat walks slowly",
-                    "generate_sound": str(generate_sound).lower(),
-                    "num_inference_steps": "35",
+                    "sound": str(generate_sound).lower(),
+                    "steps": "35",
                     "upsample": "false",
                 },
-                files={"input_reference": ("test.png", _SMALL_PNG, "image/png")},
+                files={"image": ("test.png", _SMALL_PNG, "image/png")},
             )
 
     assert resp.status_code == 200, resp.text

@@ -40,7 +40,7 @@ def _post(steps=None):
 
     data = {"prompt": "test", "upsample": "false"}
     if steps is not None:
-        data["num_inference_steps"] = str(steps)
+        data["steps"] = str(steps)
 
     with (
         patch("httpx.AsyncClient", return_value=mock_cm),
@@ -51,7 +51,7 @@ def _post(steps=None):
             resp = client.post(
                 "/generate",
                 data=data,
-                files={"input_reference": ("test.png", _SMALL_PNG, "image/png")},
+                files={"image": ("test.png", _SMALL_PNG, "image/png")},
             )
     return resp, captured
 

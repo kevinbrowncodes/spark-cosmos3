@@ -10,9 +10,9 @@ the house contract before forwarding to vLLM-Omni:
   (generate_sound/sound_duration — never enable_audio)
 
 Endpoints:
-    POST   /generate            multipart: input_reference (file), prompt,
-                                [size=720x1280, num_frames=189,
-                                 num_inference_steps=50, generate_sound=true,
+    POST   /generate            multipart: image (file), prompt,
+                                [size=720x1280, frames=189,
+                                 steps=35, sound=true,
                                  seed]                  -> upstream job JSON
     GET    /jobs/{id}           status; merges REAL progress from the
                                 progress sidecar when fresh + id-matched
@@ -116,29 +116,29 @@ async def health():
 
 @app.post("/generate")
 async def generate(
-    input_reference: UploadFile = File(...),
+    image: UploadFile = File(...),
     prompt: str = Form(...),
     size: str = Form("720x1280"),
-    num_frames: int = Form(189),
-    num_inference_steps: int = Form(35),
-    generate_sound: bool = Form(True),
+    frames: int = Form(189),
+    steps: int = Form(35),
+    sound: bool = Form(True),
     seed: int | None = Form(None),
     upsample: bool = Form(True),
 ):
-    num_frames = max(5, min(300, num_frames))
+    frames = max(5, min(300, frames))
 
-    if num_inference_steps not in (35, 50):
-        raise HTTPException(400, f"num_inference_steps must be 35 (default) or 50 (high quality), got {num_inference_steps}")
+    if steps not in (35, 50):
+        raise HTTPException(400, f"steps must be 35 (default) or 50 (high quality), got {steps}")
 
     # Validate size + duration unconditionally (BUG-002: was only checked on
     # the upsampled path). Single source of truth: upsampler._parse_size.
     try:
-        upsampler._parse_size(size, num_frames, FPS)
+        upsampler._parse_size(size, frames, FPS)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
-    image_bytes = await input_reference.read()
-    image_media_type = input_reference.content_type or "image/png"
+    image_bytes = await image.read()
+    image_media_type = image.content_type or "image/png"
     prompt_source = "prose"
     fallback_reason = "disabled_by_request"  # default when upsample=false
 
@@ -152,9 +152,9 @@ async def generate(
             prompt=prompt.rstrip(),
             image_bytes=image_bytes,
             size=size,
-            num_frames=num_frames,
+            num_frames=frames,
             fps=FPS,
-            generate_sound=generate_sound,
+            generate_sound=sound,
         )
         if fallback_reason == "invalid_size":
             raise HTTPException(400, f"size {size!r} is not supported; see RESOLUTION_RATIO_DICT for valid sizes")
@@ -165,20 +165,21 @@ async def generate(
     if full_prompt is None:
         full_prompt = prompt.rstrip()
 
+    # Translate friendly client names → vLLM-Omni wire names.
     form = {
         "prompt": full_prompt,
         "negative_prompt": _read_data("neg.json"),
         "size": size,
-        "num_frames": str(num_frames),
-        "num_inference_steps": str(num_inference_steps),
-        "generate_sound": "true" if generate_sound else "false",
-        "sound_duration": str(num_frames / FPS),
+        "num_frames": str(frames),
+        "num_inference_steps": str(steps),
+        "generate_sound": "true" if sound else "false",
+        "sound_duration": str(frames / FPS),
         "seed": str(seed if seed is not None else int.from_bytes(os.urandom(4), "big") % (2**31)),
         "extra_params": EXTRA_PARAMS,
         **FIXED_PARAMS,
     }
     files = {
-        "input_reference": (input_reference.filename, image_bytes, image_media_type)
+        "input_reference": (image.filename, image_bytes, image_media_type)
     }
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(f"{COSMOS}/v1/videos", data=form, files=files)
@@ -199,19 +200,19 @@ async def generate(
             # Internal: feed the /jobs elapsed-time progress estimate. Width/
             # height come from the job's reported `size` at poll time (the
             # engine may snap dims), so only steps + frames are kept here.
-            "num_inference_steps": num_inference_steps,
-            "num_frames": num_frames,
+            "num_inference_steps": steps,
+            "num_frames": frames,
         }
         job_logger.write(
             job_id=video_id,
             prose_prompt=prompt,
             size=size,
-            num_frames=num_frames,
-            num_inference_steps=num_inference_steps,
-            generate_sound=generate_sound,
+            num_frames=frames,
+            num_inference_steps=steps,
+            generate_sound=sound,
             seed=form["seed"],
             upsample=upsample,
-            image_filename=input_reference.filename,
+            image_filename=image.filename,
             image_media_type=image_media_type,
             upsampler_output=full_prompt if prompt_source == "upsampled" else None,
             upsampler_fallback_reason=job["upsample_fallback_reason"],

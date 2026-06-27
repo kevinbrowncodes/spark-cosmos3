@@ -8,13 +8,57 @@ docs are thinner than this — the server is the source of truth.
 
 Clients should not talk to vLLM-Omni directly. The gateway (`gateway/`,
 container `cosmos3-gateway`) owns the request contract — it applies
-`data/neg.json`, appends `data/audio.txt` to the prompt when sound is on
-(unless the prompt already has an `AUDIO:` section), sets the Table 21
-sampling params and correct field names, and forwards to :8000.
+`data/neg.json`, sets the Table 21 sampling params, and translates
+friendly client field names to vLLM-Omni wire names before forwarding to :8000.
+
+### Client contract — `POST /generate` (multipart form-data)
+
+Clients send only creative intent. The gateway handles everything else.
+
+| Field | Type | Default | Notes |
+|---|---|---|---|
+| `image` | file | required | conditioning frame (PNG/JPEG/WebP) |
+| `prompt` | string | required | prose brief; upsampler expands to structured JSON |
+| `size` | string | `720x1280` | `WxH`; must be in `RESOLUTION_RATIO_DICT`. 400 if unsupported. |
+| `frames` | int | `189` | frame count, clamped 5–300; 189 ≈ 7.9 s |
+| `steps` | int | `35` | `35` (NVIDIA model-card reference) or `50` (paper eval quality). Any other value → 400. |
+| `sound` | bool | `true` | audio generation on/off |
+| `upsample` | bool | `true` | expand prompt via Opus before sending to engine |
+| `seed` | int | (random) | optional; gateway generates if omitted |
+
+#### What the gateway injects (clients never send these)
+
+| Wire field | Value |
+|---|---|
+| `negative_prompt` | contents of `data/neg.json` (NVIDIA Appendix B.6) |
+| `guidance_scale` | `6.0` (Table 21) |
+| `flow_shift` | `10.0` (Table 21) |
+| `fps` | `24` |
+| `max_sequence_length` | `4096` |
+| `extra_params` | `{"guardrails": false, "use_resolution_template": false, "use_duration_template": false}` |
+| `sound_duration` | `frames / 24` (derived) |
+| `seed` | random if not provided by client |
+
+#### Gateway → vLLM-Omni field translation
+
+| Client sends | vLLM-Omni wire name |
+|---|---|
+| `image` (file) | `input_reference` |
+| `frames` | `num_frames` |
+| `steps` | `num_inference_steps` |
+| `sound` | `generate_sound` |
+
+#### Response
+
+Returns the upstream job JSON plus:
+- `prompt_source: "upsampled" | "prose"` — whether Opus expanded the prompt
+- `upsample_fallback_reason` — `null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`
+
+Both fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart).
+
+**HTTP 400** is returned (before any API tokens are spent) if: `size` is not in `RESOLUTION_RATIO_DICT`, duration exceeds `"10s"` (240 frames at 24 fps), or `steps` is not 35 or 50.
 
 | Method | Path | Notes |
-|---|---|---|
-| POST | `/generate` | multipart: `input_reference` (file), `prompt`; optional `size` (default 720x1280), `num_frames` (default 189, clamped 5–300), `num_inference_steps` (35 or 50 only; default 35 — NVIDIA model-card reference; 50 = high-quality override from paper eval config; any other value → 400), `generate_sound` (default true), `upsample` (default true). Returns the upstream job JSON (incl. the final assembled `prompt`) plus `prompt_source: "upsampled" \| "prose"` and `upsample_fallback_reason` (`null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`). Both fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart). **If `size` is not in `RESOLUTION_RATIO_DICT` or the derived duration exceeds `"10s"` (240 frames at 24 fps), the gateway returns HTTP 400 before spending any API tokens.** Valid sizes: all `WxH` pairs in `data/resolution_ratio_dict.json`. |
 | GET | `/jobs/{id}` | upstream status with a **moving progress bar**: a gateway elapsed-time estimate (`progress_source: "estimate"`, `eta_s` = expected − elapsed) that climbs as the render runs, capped at 99; the log sidecar then pins it to 99 (`progress_source: "sidecar"`) once denoise finishes (the VAE/audio/encode tail), and it snaps to 100 on completion. Progress is `max(server, estimate)` so a future real server value would win |
 | GET | `/jobs/{id}/content` | streams the MP4 |
 | DELETE | `/jobs/{id}` | delete the job record. ⚠️ does NOT stop in-flight GPU work — vLLM-Omni aborts are bookkeeping only; an orphaned render runs to completion and blocks the queue |
