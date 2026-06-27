@@ -4,11 +4,11 @@ As a gateway operator, I want the upsampler to build prompts from NVIDIA's vendo
 
 ## Acceptance Criteria
 
-- [ ] `data/upsampler_template.txt` copied byte-for-byte from `cosmos_framework/inference/prompting_templates/external_api/t2v_i2v_video_prompt.txt` (upstream `github.com/nvidia/cosmos-framework`, branch `main`).
-- [ ] `data/upsampler_schema.json` copied byte-for-byte from `cosmos_framework/inference/prompting_templates/external_api/t2v_i2v_video_json_schema.json` (same upstream).
-- [ ] `data/SOURCES.md` created with: upstream raw URL, sha256, and pull date for each file.
-- [ ] Template file grepped for `$` tokens; only the five known placeholders (`$intro`, `$image_note`, `$nl_description`, `$json_template`, `$resolution_ratio_dict`) are present. Result recorded in `data/SOURCES.md`.
-- [ ] `scripts/sync_config.sh` confirmed to include the new files so they reach the runtime location alongside `neg.json` and `audio.txt`.
+- [x] `data/upsampler_template.txt` copied byte-for-byte from `cosmos_framework/inference/prompting_templates/external_api/t2v_i2v_video_prompt.txt` (upstream `github.com/nvidia/cosmos-framework`, branch `main`).
+- [x] `data/upsampler_schema.json` copied byte-for-byte from `cosmos_framework/inference/prompting_templates/external_api/t2v_i2v_video_json_schema.json` (same upstream).
+- [x] `data/SOURCES.md` created with: upstream raw URL, sha256, and pull date for each file.
+- [x] Template file grepped for `$` tokens; only the five known placeholders (`$intro`, `$image_note`, `$nl_description`, `$json_template`, `$resolution_ratio_dict`) are present. Result recorded in `data/SOURCES.md`.
+- [x] `scripts/sync_config.sh` confirmed to include the new files so they reach the runtime location alongside `neg.json` and `audio.txt`.
 
 ## Technical Notes
 
