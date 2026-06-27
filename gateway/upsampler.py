@@ -191,7 +191,9 @@ def _extract_json(text: str) -> dict:
     return data
 
 
-_SAMPLING_PARAMS = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "max_tokens": 8192}
+# temperature/top_p/top_k from NVIDIA's PromptUpsamplerConfig are not accepted
+# by claude-opus-4-8 (BUG_001). max_tokens retained; model uses its own defaults.
+_SAMPLING_PARAMS = {"max_tokens": 8192}
 
 
 async def upsample(
