@@ -29,6 +29,8 @@ def write(
     image_media_type: str | None,
     upsampler_output: str | None,
     upsampler_fallback_reason: str | None,
+    upsampler_meta: dict | None,
+    engine_form: dict | None,
     cosmos_response: dict,
 ) -> None:
     try:
@@ -52,7 +54,9 @@ def write(
             "upsampler": {
                 "output": json.loads(upsampler_output) if upsampler_output else None,
                 "fallback_reason": upsampler_fallback_reason,
+                "api": upsampler_meta,
             },
+            "engine_request": engine_form,
             "cosmos": cosmos_response,
         }
         path.write_text(json.dumps(record, indent=2, ensure_ascii=False))

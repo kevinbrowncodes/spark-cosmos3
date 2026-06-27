@@ -96,7 +96,7 @@ class TestUpsampleInvalidSize:
 
         async def run():
             with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test"}):
-                result, reason = await upsampler.upsample(
+                result, reason, meta = await upsampler.upsample(
                     prompt="test",
                     image_bytes=b"\xff\xd8\x00",
                     size="1920x1080",  # not in RRD
@@ -106,5 +106,6 @@ class TestUpsampleInvalidSize:
                 )
             assert result is None
             assert reason == "invalid_size"
+            assert meta is None
 
         asyncio.run(run())

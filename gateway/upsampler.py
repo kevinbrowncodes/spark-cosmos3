@@ -16,6 +16,7 @@ import base64
 import json
 import os
 import re
+import time
 from pathlib import Path
 from string import Template
 
@@ -190,6 +191,9 @@ def _extract_json(text: str) -> dict:
     return data
 
 
+_SAMPLING_PARAMS = {"temperature": 0.7, "top_p": 0.8, "top_k": 20, "max_tokens": 8192}
+
+
 async def upsample(
     prompt: str,
     image_bytes: bytes,
@@ -197,27 +201,31 @@ async def upsample(
     num_frames: int,
     fps: int,
     generate_sound: bool,
-) -> tuple[str | None, str | None]:
+) -> tuple[str | None, str | None, dict | None]:
     """Expand a prose brief into the structured JSON prompt.
 
-    Returns (json_string, None) on success, or (None, reason) on any
-    failure — the caller falls back to the prose path and reports the
+    Returns (json_string, None, meta) on success, or (None, reason, None) on
+    any failure — the caller falls back to the prose path and reports the
     reason to the client. The special reason 'invalid_size' signals that
     the caller should return HTTP 400 rather than fall back to prose.
+
+    meta contains the full Anthropic API request/response details for logging.
+    It is None whenever the API call was not made or not reached.
     """
     if not available():
-        return None, "no_api_key"
+        return None, "no_api_key", None
 
     try:
         resolution, aspect_ratio, duration = _parse_size(size, num_frames, fps)
     except ValueError as exc:
         print(f"upsampler: invalid size — {exc}", flush=True)
-        return None, "invalid_size"
+        return None, "invalid_size", None
 
     user_text = build_upsampler_prompt(
         prompt, resolution=resolution, aspect_ratio=aspect_ratio,
         duration=duration, fps=fps,
     )
+    t0 = time.monotonic()
     try:
         client = _get_client()
         message = await client.with_options(timeout=120.0).messages.create(
@@ -232,36 +240,50 @@ async def upsample(
                     ],
                 }
             ],
-            # Framework PromptUpsamplerConfig defaults. temperature + top_p + top_k
-            # together is intentional — matches what NVIDIA validated.
-            temperature=0.7,
-            top_p=0.8,
-            top_k=20,
-            max_tokens=8192,
+            **_SAMPLING_PARAMS,
         )
     except Exception as exc:
         reason = f"api_error: {type(exc).__name__}: {exc}"
         print(f"upsampler: falling back to prose — {reason}", flush=True)
-        return None, reason
+        return None, reason, None
+
+    latency_s = round(time.monotonic() - t0, 2)
 
     if message.stop_reason == "refusal":
         print("upsampler: refusal, falling back to prose", flush=True)
-        return None, "refusal"
+        return None, "refusal", None
 
     text = next((b.text for b in message.content if b.type == "text"), "")
     try:
         data = _extract_json(text)
     except (ValueError, json.JSONDecodeError) as exc:
         print(f"upsampler: JSON parse failed ({exc}), falling back to prose", flush=True)
-        return None, "upsampler_error"
+        return None, "upsampler_error", None
 
     if "subjects" not in data:
         print("upsampler: missing expected fields, falling back to prose", flush=True)
-        return None, "invalid_json"
+        return None, "invalid_json", None
 
     _pin_output_params(data, resolution=resolution, aspect_ratio=aspect_ratio,
                        duration=duration, fps=fps)
     if not generate_sound:
         data["audio_description"] = ""
 
-    return json.dumps(data, ensure_ascii=True), None
+    meta = {
+        "model": MODEL,
+        "prompt_sent": user_text,
+        "sampling_params": _SAMPLING_PARAMS,
+        "raw_response": text,
+        "stop_reason": message.stop_reason,
+        "usage": {
+            "input_tokens": message.usage.input_tokens,
+            "output_tokens": message.usage.output_tokens,
+        },
+        "latency_s": latency_s,
+    }
+    print(
+        f"upsampler: ok — {latency_s}s, "
+        f"{meta['usage']['input_tokens']}in/{meta['usage']['output_tokens']}out tokens",
+        flush=True,
+    )
+    return json.dumps(data, ensure_ascii=True), None, meta

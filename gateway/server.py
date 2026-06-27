@@ -135,8 +135,9 @@ async def generate(
     # brief into the Appendix A JSON via the upsampler. Any failure falls
     # back to the prose path below, with the reason reported to the client.
     full_prompt = None
+    upsampler_meta = None
     if upsample:
-        structured, fallback_reason = await upsampler.upsample(
+        structured, fallback_reason, upsampler_meta = await upsampler.upsample(
             prompt=prompt.rstrip(),
             image_bytes=image_bytes,
             size=size,
@@ -203,6 +204,8 @@ async def generate(
             image_media_type=image_media_type,
             upsampler_output=full_prompt if prompt_source == "upsampled" else None,
             upsampler_fallback_reason=job["upsample_fallback_reason"],
+            upsampler_meta=upsampler_meta,
+            engine_form=form,
             cosmos_response=job,
         )
     return job

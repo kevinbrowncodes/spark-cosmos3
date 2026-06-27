@@ -47,7 +47,7 @@ def _post_generate(generate_sound: bool) -> tuple[dict, dict]:
 
     with (
         patch("httpx.AsyncClient", return_value=mock_cm),
-        patch("upsampler.upsample", new=AsyncMock(return_value=(None, "disabled_by_request"))),
+        patch("upsampler.upsample", new=AsyncMock(return_value=(None, "disabled_by_request", None))),
         patch("job_logger.write"),
     ):
         with TestClient(server.app) as client:
