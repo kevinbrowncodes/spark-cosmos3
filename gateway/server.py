@@ -114,6 +114,9 @@ async def health():
     return {"gateway": "ok", "cosmos": upstream}
 
 
+_VALID_REASONERS = ("opus", "aeon")
+
+
 @app.post("/generate")
 async def generate(
     image: UploadFile = File(...),
@@ -124,7 +127,11 @@ async def generate(
     sound: bool = Form(True),
     seed: int | None = Form(None),
     upsample: bool = Form(True),
+    reasoner: str = Form("opus"),
 ):
+    if reasoner not in _VALID_REASONERS:
+        raise HTTPException(422, f"reasoner must be one of {list(_VALID_REASONERS)}, got {reasoner!r}")
+
     frames = max(5, min(300, frames))
 
     if steps not in (35, 50):
@@ -155,9 +162,12 @@ async def generate(
             num_frames=frames,
             fps=FPS,
             generate_sound=sound,
+            reasoner=reasoner,
         )
         if fallback_reason == "invalid_size":
             raise HTTPException(400, f"size {size!r} is not supported; see RESOLUTION_RATIO_DICT for valid sizes")
+        if fallback_reason == "aeon_unreachable":
+            raise HTTPException(503, f"AEON reasoner is not reachable at {upsampler.AEON_URL}; confirm the AEON service is running on Spark 1")
         if structured:
             full_prompt = structured
             prompt_source = "upsampled"
@@ -197,6 +207,7 @@ async def generate(
         _JOB_META[video_id] = {
             "prompt_source": job["prompt_source"],
             "upsample_fallback_reason": job["upsample_fallback_reason"],
+            "reasoner": reasoner,
             # Internal: feed the /jobs elapsed-time progress estimate. Width/
             # height come from the job's reported `size` at poll time (the
             # engine may snap dims), so only steps + frames are kept here.
@@ -270,6 +281,7 @@ async def job_status(video_id: str):
     if meta := _JOB_META.get(video_id):
         status["prompt_source"] = meta.get("prompt_source")
         status["upsample_fallback_reason"] = meta.get("upsample_fallback_reason")
+        status["reasoner"] = meta.get("reasoner")
     return status
 
 
