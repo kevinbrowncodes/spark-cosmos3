@@ -8,13 +8,13 @@ set -euo pipefail
 
 SPARK1="${1:-${SPARK1_HOST:-192.168.1.33}}"
 SPARK1_USER="${SPARK1_USER:-kevinbrown}"
-SPARK1_REPO="$HOME/Documents/GitHub/kevinbrowncodes/spark-cosmos3"
 REPO_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ENV_FILE="$REPO_DIR/.env"
 
 echo "Fetching secrets from $SPARK1_USER@$SPARK1 ..."
 
-SECRETS=$(ssh "$SPARK1_USER@$SPARK1" "bash $SPARK1_REPO/scripts/export_secrets.sh")
+# Use ~ so it expands to the remote user's home, not this machine's $HOME
+SECRETS=$(ssh "$SPARK1_USER@$SPARK1" 'bash ~/Documents/GitHub/kevinbrowncodes/spark-cosmos3/scripts/export_secrets.sh')
 
 HF_TOKEN=$(printf '%s\n' "$SECRETS" | grep '^HF_TOKEN=' | cut -d= -f2-)
 ANTHROPIC_API_KEY=$(printf '%s\n' "$SECRETS" | grep '^ANTHROPIC_API_KEY=' | cut -d= -f2-)
