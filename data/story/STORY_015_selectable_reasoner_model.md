@@ -4,13 +4,13 @@ As a pipeline operator, I want to specify whether the gateway should use Anthrop
 
 ## Acceptance Criteria
 
-- [ ] `POST /generate` accepts an optional `reasoner` field (string, default `"opus"`)
-- [ ] `reasoner=opus` routes to the existing Anthropic Opus upsampler — identical to current behaviour; clients that omit the field are unaffected
-- [ ] `reasoner=aeon` routes to the AEON vLLM endpoint configured via `AEON_URL` in `.env`
-- [ ] Sending an unrecognised `reasoner` value returns HTTP 422 with a clear error listing accepted values (`["opus", "aeon"]`)
-- [ ] The `reasoner` value used is recorded in the job's provenance block (alongside `prompt_source`, `upsample_attempts`, etc.)
-- [ ] If `reasoner=aeon` is selected but the AEON endpoint is unreachable, the gateway returns HTTP 503 — it does **not** silently fall back to Opus (the operator chose AEON deliberately)
-- [ ] `.env.example` documents the `AEON_URL` variable
+- [x] `POST /generate` accepts an optional `reasoner` field (string, default `"opus"`)
+- [x] `reasoner=opus` routes to the existing Anthropic Opus upsampler — identical to current behaviour; clients that omit the field are unaffected
+- [x] `reasoner=aeon` routes to the AEON vLLM endpoint configured via `AEON_URL` in `.env`
+- [x] Sending an unrecognised `reasoner` value returns HTTP 422 with a clear error listing accepted values (`["opus", "aeon"]`)
+- [x] The `reasoner` value used is recorded in the job's provenance block (alongside `prompt_source`, `upsample_attempts`, etc.)
+- [x] If `reasoner=aeon` is selected but the AEON endpoint is unreachable, the gateway returns HTTP 503 — it does **not** silently fall back to Opus (the operator chose AEON deliberately)
+- [x] `.env.example` documents the `AEON_URL` variable
 
 ## Technical Notes
 

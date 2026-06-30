@@ -4,13 +4,13 @@ As a pipeline operator, I want the gateway to retry the Opus prompt-upsampling c
 
 ## Acceptance Criteria
 
-- [ ] The upsampler makes up to **3 attempts total** before giving up, with a **fixed 30-second wait** between attempts
-- [ ] The following errors trigger a retry: HTTP 529 (`overloaded_error`), HTTP 429 (rate limit), HTTP 500 / 502 / 503, and connection/read timeouts
-- [ ] The following errors do **not** trigger a retry: HTTP 413 (`request_too_large`), HTTP 400, and any other 4xx — retrying cannot help
-- [ ] After all 3 attempts fail, the existing fallback behaviour is preserved: `prompt_source` is set to `"prose"` and `upsample_fallback_reason` records the final error
-- [ ] When a retry is needed, the attempt number and error are logged at WARNING level before the wait
-- [ ] The provenance block includes `upsample_attempts: N` (1 = succeeded first try, 2 or 3 = retried) so retry frequency is visible without digging through logs
-- [ ] The retry sleep uses `asyncio.sleep` (not `time.sleep`) so the 30-second wait does not block the FastAPI event loop and freeze other in-flight requests
+- [x] The upsampler makes up to **3 attempts total** before giving up, with a **fixed 30-second wait** between attempts
+- [x] The following errors trigger a retry: HTTP 529 (`overloaded_error`), HTTP 429 (rate limit), HTTP 500 / 502 / 503, and connection/read timeouts
+- [x] The following errors do **not** trigger a retry: HTTP 413 (`request_too_large`), HTTP 400, and any other 4xx — retrying cannot help
+- [x] After all 3 attempts fail, the existing fallback behaviour is preserved: `prompt_source` is set to `"prose"` and `upsample_fallback_reason` records the final error
+- [x] When a retry is needed, the attempt number and error are logged at WARNING level before the wait
+- [x] The provenance block includes `upsample_attempts: N` (1 = succeeded first try, 2 or 3 = retried) so retry frequency is visible without digging through logs
+- [x] The retry sleep uses `asyncio.sleep` (not `time.sleep`) so the 30-second wait does not block the FastAPI event loop and freeze other in-flight requests
 
 ## Technical Notes
 
