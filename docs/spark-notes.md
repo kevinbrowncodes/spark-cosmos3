@@ -54,6 +54,51 @@ memory accordingly.
 - NVIDIA's own numbers: `inference_benchmarks.md` in their cosmos cookbook
   repo (https://github.com/nvidia/cosmos — local clone at `~/cosmos`)
 
+## Multi-Spark setup
+
+Two Sparks can each run the full stack independently. Spark 1 is
+`192.168.1.33` (username `kevinbrown`), Spark 2 is `192.168.1.37`
+(username `kbrown`). Both are connected via a Netgear powerline adapter
+kit (~100 Mbps real-world throughput).
+
+**Required HF cache entries on each machine** (two top-level entries;
+everything else is bundled inside the guardrail snapshot):
+
+| Cache entry | Size | Notes |
+|---|---|---|
+| `models--nvidia--Cosmos3-Nano` | ~33 GB | Main generation weights |
+| `models--nvidia--Cosmos-1.0-Guardrail` | ~34 GB | Includes LlamaGuard-7b, Aegis, SigLIP, RetinaFace bundled inside |
+| `models--Qwen--Qwen3Guard-Gen-0.6B` | ~1.5 GB | Loaded separately by the guardrail package at startup |
+
+**WARNING:** The engine crashes at startup if any of these are missing,
+even when requests use `{"guardrails": false}`. The guardrail models
+load unconditionally at init time.
+
+**Transfer from Spark 1 → Spark 2 (run on Spark 2):**
+```bash
+# Cosmos3-Nano weights
+rsync -avP --mkpath \
+  kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/ \
+  ~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/
+
+# Guardrail bundle (~34 GB; includes sub-models)
+rsync -avP --mkpath \
+  kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--nvidia--Cosmos-1.0-Guardrail/ \
+  ~/.cache/huggingface/hub/models--nvidia--Cosmos-1.0-Guardrail/
+
+# Qwen3Guard (separate top-level entry, ~1.5 GB)
+rsync -avP --mkpath \
+  kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--Qwen--Qwen3Guard-Gen-0.6B/ \
+  ~/.cache/huggingface/hub/models--Qwen--Qwen3Guard-Gen-0.6B/
+```
+
+**Verifying both Sparks are on the same gateway code:**
+```bash
+docker inspect spark-cosmos3-gateway:latest \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['Config']['Labels'])"
+```
+The `git.sha` label must match on both machines.
+
 ## Watching a generation
 
 ```bash

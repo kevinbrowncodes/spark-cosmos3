@@ -150,6 +150,7 @@ docker-compose.yml
   `progress-sidecar/`) is therefore a **terminal/tail signal only** (final
   step + `step==total` → VAE/encode tail), not live motion. A moving bar must
   come from an **elapsed-time estimate** (the gateway's job; see docs/api.md).
+- **Guardrail requires two separate HF cache entries.** Even with `{"guardrails": false}` in `extra_params`, the engine loads the guardrail models at startup and will crash if they are missing. Two top-level cache entries are required: `~/.cache/huggingface/hub/models--nvidia--Cosmos-1.0-Guardrail/` AND `~/.cache/huggingface/hub/models--Qwen--Qwen3Guard-Gen-0.6B/`. On a fresh machine, rsync both from an existing node (see `docs/spark-notes.md`). The sub-models bundled inside Cosmos-1.0-Guardrail (LlamaGuard, Aegis, SigLIP) do **not** need separate top-level cache entries.
 - **Engine aborts don't stop GPU work.** DELETE on a job removes the record
   but the denoise loop runs to completion, orphaned, blocking the queue
   (measured: a 42-min 720p render completed after its abort). True
@@ -181,7 +182,8 @@ N/A for memory on GB10. The only trustworthy check is **`free -h`**.
 
 ## 8. Service Management
 
-- Start/stop: `docker compose up -d` / `docker compose down` in this repo.
+- **Deploy with `./scripts/deploy.sh`**, not bare `docker compose up -d`. The deploy script bakes the current git SHA into the gateway and progress-sidecar images as a Docker label (`git.sha`), enabling version verification across multiple nodes.
+- Start/stop: `./scripts/deploy.sh` / `docker compose down` in this repo.
   Container name: `cosmos3-api`, port 8000. Auto-starts on boot
   (`restart: unless-stopped`).
 - LTX (`ltx2-api`, `ltx2-comfyui`) is **opt-in** (`restart: "no"` since
