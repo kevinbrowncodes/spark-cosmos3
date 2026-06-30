@@ -68,10 +68,14 @@ commit-hash snapshot) — the serve command points at this exact path.
 ### 3. Run
 
 ```bash
-docker compose up -d
+./scripts/deploy.sh
 docker compose logs -f     # wait for "Application startup complete"
-curl http://localhost:8000/health
+curl http://localhost:8002/health
 ```
+
+`deploy.sh` builds the gateway and progress-sidecar images with the current git
+commit SHA baked in as a Docker label, then starts the full stack. Use this
+instead of bare `docker compose up -d` so you always know what code is running.
 
 ## API usage
 
@@ -115,8 +119,11 @@ progress-sidecar/           # serves real per-step progress on :8001 (vLLM-Omni'
 .env.example                # HF_TOKEN and path overrides (copy to .env)
 data/neg.json               # negative prompt (Cosmos Appendix B.6) — CANONICAL copy
 data/audio.txt              # constant audio directive: ambient only, no dialogue
+scripts/deploy.sh           # build images (with git SHA label) and start the full stack
 scripts/download_models.sh  # re-fetch the 33 GB weights into the expected layout
 scripts/sync_config.sh      # deploy data/* to the runtime location (cosmos-media)
+scripts/export_secrets.sh   # (Spark 1) print HF_TOKEN + ANTHROPIC_API_KEY for transfer
+scripts/import_secrets.sh   # (Spark 2) pull secrets from Spark 1 via SSH into .env
 examples/generate.sh        # curl-based submit/poll/download client
 CLAUDE.md                   # operational context for Claude Code sessions
 docs/api.md                 # full /v1/videos parameter reference (from OpenAPI + source)
@@ -139,6 +146,34 @@ docs/cosmos-3-quick-reference.md   # deployment-focused summary of the report
 - [NVIDIA cosmos cookbook](https://github.com/nvidia/cosmos) — inference
   benchmarks and recipes
 - [nvidia/Cosmos3-Nano model card](https://huggingface.co/nvidia/Cosmos3-Nano)
+
+## Multi-Spark setup
+
+To bring up a second Spark using the same stack:
+
+```bash
+# On Spark 2 — clone, pull secrets from Spark 1, sync config, transfer weights
+git clone https://github.com/kevinbrowncodes/spark-cosmos3
+cd spark-cosmos3
+./scripts/import_secrets.sh          # SSHes to Spark 1 (default 192.168.1.33) and writes .env
+mkdir -p ~/Documents/cosmos-media
+./scripts/sync_config.sh
+rsync -avP --mkpath \
+  kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/ \
+  ~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/
+./scripts/deploy.sh
+```
+
+**Verifying both Sparks are on the same code:**
+
+```bash
+docker inspect spark-cosmos3-gateway:latest \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)[0]['Config']['Labels'])"
+```
+
+Run this on each machine — `git.sha` should match. The engine image
+(`vllm/vllm-omni:cosmos3`) is pinned by digest in `docker-compose.yml` and is
+always identical regardless of when it was pulled.
 
 ## Troubleshooting
 

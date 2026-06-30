@@ -4,11 +4,11 @@ As an operator running the same stack on two Sparks, I want to be able to confir
 
 ## Acceptance Criteria
 
-- [ ] `docker inspect spark-cosmos3-gateway:latest` includes a `git.sha` label showing the short commit hash the image was built from
-- [ ] `docker inspect spark-cosmos3-progress:latest` includes the same `git.sha` label
-- [ ] A `scripts/deploy.sh` script builds and starts the stack with the git SHA baked in automatically — no manual flag required
-- [ ] Running `scripts/deploy.sh` on both Sparks and comparing `git.sha` labels confirms whether they are on the same code
-- [ ] The engine image (`vllm/vllm-omni:cosmos3`) is unaffected — it is already pinned by digest in docker-compose.yml
+- [x] `docker inspect spark-cosmos3-gateway:latest` includes a `git.sha` label showing the short commit hash the image was built from
+- [x] `docker inspect spark-cosmos3-progress:latest` includes the same `git.sha` label
+- [x] A `scripts/deploy.sh` script builds and starts the stack with the git SHA baked in automatically — no manual flag required
+- [x] Running `scripts/deploy.sh` on both Sparks and comparing `git.sha` labels confirms whether they are on the same code
+- [x] The engine image (`vllm/vllm-omni:cosmos3`) is unaffected — it is already pinned by digest in docker-compose.yml
 
 ## Technical Notes
 
