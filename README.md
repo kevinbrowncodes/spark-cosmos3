@@ -165,6 +165,9 @@ rsync -avP --mkpath \
 rsync -avP --mkpath \
   kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--nvidia--Cosmos-1.0-Guardrail/ \
   ~/.cache/huggingface/hub/models--nvidia--Cosmos-1.0-Guardrail/
+rsync -avP --mkpath \
+  kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--Qwen--Qwen3Guard-Gen-0.6B/ \
+  ~/.cache/huggingface/hub/models--Qwen--Qwen3Guard-Gen-0.6B/
 ./scripts/deploy.sh
 ```
 
