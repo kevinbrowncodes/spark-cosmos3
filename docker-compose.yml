@@ -60,7 +60,10 @@ services:
   # contract (neg.json, audio style, Table 21 params, correct field names)
   # and merges real progress from the sidecar into job status. See gateway/.
   gateway:
-    build: ./gateway
+    build:
+      context: ./gateway
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     image: spark-cosmos3-gateway:latest
     container_name: cosmos3-gateway
     restart: unless-stopped
@@ -80,7 +83,10 @@ services:
       - progress
 
   progress:
-    build: ./progress-sidecar
+    build:
+      context: ./progress-sidecar
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
     image: spark-cosmos3-progress:latest
     container_name: cosmos3-progress
     restart: unless-stopped
