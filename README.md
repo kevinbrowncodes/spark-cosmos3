@@ -158,9 +158,13 @@ cd spark-cosmos3
 ./scripts/import_secrets.sh          # SSHes to Spark 1 (default 192.168.1.33) and writes .env
 mkdir -p ~/Documents/cosmos-media
 ./scripts/sync_config.sh
+# Two models are required: the main weights and the guardrail safety model
 rsync -avP --mkpath \
   kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/ \
   ~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/
+rsync -avP --mkpath \
+  kevinbrown@192.168.1.33:~/.cache/huggingface/hub/models--nvidia--Cosmos-1.0-Guardrail/ \
+  ~/.cache/huggingface/hub/models--nvidia--Cosmos-1.0-Guardrail/
 ./scripts/deploy.sh
 ```
 
