@@ -53,8 +53,9 @@ Clients send only creative intent. The gateway handles everything else.
 Returns the upstream job JSON plus:
 - `prompt_source: "upsampled" | "prose"` — whether Opus expanded the prompt
 - `upsample_fallback_reason` — `null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`
+- `upsampler_output` — the exact structured prompt string the upsampler produced and the gateway sent to the engine, for provenance/viewing. `null` on the prose path (`prompt_source: "prose"`), including when an attempted upsample failed and fell back — the field means "what the upsampler produced," not "what ran"
 
-Both fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart).
+These fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart).
 
 **HTTP 400** is returned (before any API tokens are spent) if: `size` is not in `RESOLUTION_RATIO_DICT`, duration exceeds `"10s"` (240 frames at 24 fps), or `steps` is not 35 or 50.
 

@@ -200,6 +200,10 @@ async def generate(
     # null when upsampled; otherwise why the gateway used the prose defaults:
     # "disabled_by_request" | "no_api_key" | "refusal" | "invalid_json" | "api_error: …"
     job["upsample_fallback_reason"] = None if prompt_source == "upsampled" else fallback_reason
+    # The exact structured prompt the upsampler produced and we sent to the
+    # engine — echoed for pipeline provenance/viewing (STORY-016). Means "what
+    # the upsampler produced" (same as the job-log key): null on the prose path.
+    job["upsampler_output"] = full_prompt if prompt_source == "upsampled" else None
 
     if video_id := job.get("id"):
         while len(_JOB_META) >= _JOB_META_MAX:
@@ -207,6 +211,7 @@ async def generate(
         _JOB_META[video_id] = {
             "prompt_source": job["prompt_source"],
             "upsample_fallback_reason": job["upsample_fallback_reason"],
+            "upsampler_output": job["upsampler_output"],
             "reasoner": reasoner,
             # Internal: feed the /jobs elapsed-time progress estimate. Width/
             # height come from the job's reported `size` at poll time (the
@@ -281,6 +286,7 @@ async def job_status(video_id: str):
     if meta := _JOB_META.get(video_id):
         status["prompt_source"] = meta.get("prompt_source")
         status["upsample_fallback_reason"] = meta.get("upsample_fallback_reason")
+        status["upsampler_output"] = meta.get("upsampler_output")
         status["reasoner"] = meta.get("reasoner")
     return status
 
