@@ -182,6 +182,10 @@ test with a format already known to be weak. Format:
             settling forward and then rocking back as it comes to rest.
 ```
 
+The twelve scripts are vendored at
+`gateway/tests/fixtures/story020_beat_scripts.json` so the round is reproducible
+and the prompt stays provably identical between arms.
+
 Four properties each beat script must have, derived from what beat flat prose:
 
 1. **Sequencing** — three ordered beats of 3-4 s with explicit M:SS boundaries,
@@ -194,6 +198,12 @@ Four properties each beat script must have, derived from what beat flat prose:
    something to preserve.
 4. **Audio intent in-band** — the prose path never populates `audio_description`,
    so audio cues must live in the beat text ("tyres crunching over loose gravel").
+
+**Authorship note.** These are Claude-authored, deliberately. The variable under
+test is `condition_seconds`; the prompt is a *controlled constant*, identical on
+both sides, so its authorship cannot bias the comparison. The separate
+beat-prose-vs-JSON round is different — there the prose *is* the thing being
+tested, and it must be Gemini-authored to represent the production path.
 
 **Smoke** (required — this is the story's entire point) — at 480p only:
 1. `frames=289`, `condition_seconds=2.0` — the headline config: 2 s in, 10.0 s of
