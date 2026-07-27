@@ -9,16 +9,16 @@ into the footage I actually asked for.
 
 ## Acceptance Criteria
 
-- [ ] On the V2V path, the duration validated and sent to the upsampler is computed from **generated** frames, not total frames
-- [ ] `frames=289` with `condition_seconds=2.0` is accepted and yields exactly 240 generated frames (10.0 s)
-- [ ] The I2V path's duration accounting is **unchanged** — total frames remains correct there
-- [ ] `data/upsampler_schema.json` is **not** modified; the `'2s'`–`'10s'` range still holds
-- [ ] The frame ceiling is **resolution-aware**: 400 frames at 256p/480p, 300 at 720p — `frames` above the ceiling for the requested size returns 400
-- [ ] At 480p, 3.0 s of conditioning plus a full 10 s of new video (313 frames) is accepted
-- [ ] The progress estimate is within ~10% of actual on a 289-frame job
-- [ ] `sound_duration` covers the full 289 frames (12.04 s), not just the generated span
-- [ ] A 289-frame **480p** V2V job completes end-to-end (480p is the production resolution — output is upscaled to 1080p externally, so 720p is explicitly out of scope for this story)
-- [ ] `docs/api.md` records the generated-frames duration rule and the recalibrated timing table
+- [x] On the V2V path, the duration validated and sent to the upsampler is computed from **generated** frames, not total frames
+- [x] `frames=289` with `condition_seconds=2.0` is accepted and yields exactly 240 generated frames (10.0 s)
+- [x] The I2V path's duration accounting is **unchanged** — total frames remains correct there
+- [x] `data/upsampler_schema.json` is **not** modified; the `'2s'`–`'10s'` range still holds
+- [x] The frame ceiling is **resolution-aware**: 400 frames at 256p/480p, 300 at 720p — `frames` above the ceiling for the requested size returns 400
+- [x] At 480p, 3.0 s of conditioning plus a full 10 s of new video (313 frames) is accepted
+- [~] The progress estimate is within ~10% of actual on a 289-frame job — **+11%, marginally outside**. See the volume-exponent note below; a proper fix is a separate ticket.
+- [x] `sound_duration` covers the full 289 frames (12.04 s), not just the generated span
+- [x] A 289-frame **480p** V2V job completes end-to-end (480p is the production resolution — output is upscaled to 1080p externally, so 720p is explicitly out of scope for this story)
+- [x] `docs/api.md` records the generated-frames duration rule and the recalibrated timing table
 
 ## Technical Notes
 
