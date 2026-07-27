@@ -20,15 +20,17 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from starlette.testclient import TestClient
 import server
 
+from tests.helpers import make_clip
+
 _SMALL_PNG = (
     b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
     b"\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\x0f\x00"
     b"\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82"
 )
-# STORY_017 forwards the clip untouched — the engine sniffs it. Decoding (and
-# therefore needing a real MP4 here) arrives with the frame-count guard in
-# STORY_018.
-_FAKE_MP4 = b"\x00\x00\x00\x20ftypisom\x00\x00\x02\x00isomiso2mp41" + b"\x00" * 64
+# Since STORY_018 the gateway decodes the clip, so this must be a real one.
+# Exactly 5 frames — the default conditioning window — so prepare_tail returns
+# it byte-identical and the forwarding assertions below stay meaningful.
+_CLIP = make_clip(5)
 
 
 def _post(files, data=None, upsample_result=None):
@@ -70,7 +72,7 @@ def _post(files, data=None, upsample_result=None):
 
 
 _IMAGE = {"image": ("t.png", _SMALL_PNG, "image/png")}
-_VIDEO = {"video": ("clip.mp4", _FAKE_MP4, "video/mp4")}
+_VIDEO = {"video": ("clip.mp4", _CLIP, "video/mp4")}
 
 
 class TestModeDispatch:
@@ -86,7 +88,7 @@ class TestModeDispatch:
         assert resp.status_code == 200
         assert resp.json()["mode"] == "v2v"
         name, body, media_type = captured["files"]["input_reference"]
-        assert (name, body, media_type) == ("clip.mp4", _FAKE_MP4, "video/mp4")
+        assert (name, body, media_type) == ("clip.mp4", _CLIP, "video/mp4")
 
     def test_both_supplied_is_400(self):
         resp, _ = _post({**_IMAGE, **_VIDEO})
@@ -100,7 +102,7 @@ class TestModeDispatch:
 
     def test_video_without_declared_type_defaults_to_mp4(self):
         resp, captured = _post(
-            {"video": ("clip.mp4", _FAKE_MP4)}, data={"upsample": "false"}
+            {"video": ("clip.mp4", _CLIP)}, data={"upsample": "false"}
         )
         assert resp.status_code == 200
         assert captured["files"]["input_reference"][2] == "video/mp4"
@@ -166,10 +168,13 @@ class TestI2VRegression:
         "id", "status", "progress", "prompt_source",
         "upsample_fallback_reason", "upsampler_output",
     }
+    # Fields added by this epic. Anything outside this set is an unintended
+    # change to a response existing clients already parse.
+    _ADDED_KEYS = {"mode", "condition_frames", "generated_frames"}
 
-    def test_response_gains_only_mode(self):
+    def test_response_gains_only_known_fields(self):
         resp, _ = _post(_IMAGE)
-        assert set(resp.json()) - self._BASELINE_KEYS == {"mode"}
+        assert set(resp.json()) - self._BASELINE_KEYS == self._ADDED_KEYS
 
     def test_forwarded_form_is_unchanged(self):
         _, captured = _post(_IMAGE)

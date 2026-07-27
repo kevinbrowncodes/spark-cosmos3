@@ -26,6 +26,7 @@ Clients send only creative intent. The gateway handles everything else.
 | `sound` | bool | `true` | audio generation on/off |
 | `upsample` | bool | `true` | expand prompt via Opus before sending to engine |
 | `seed` | int | (random) | optional; gateway generates if omitted |
+| `condition_seconds` | float | `0.2` | **V2V only.** How much of the clip's *end* conditions the render. 400 on the `image` path. |
 
 #### Mode is selected by which file field you populate
 
@@ -53,19 +54,50 @@ V2V-specific rules:
   `upsample_fallback_reason: "v2v_not_supported"`. The current template describes
   a *starting frame*; pointed at a clip it would describe frame 0 as a still and
   throw away the motion history. STORY_019 vendors the continuation template.
-- **Conditioning length is not yet client-controllable.** The engine default of
-  `condition_frame_indexes_vision = (0, 1)` applies — 5 pixel frames, matching
-  the `T_cond = 2` recipe from Cosmos 3 pre-training. STORY_018 exposes it.
-- **Source clips must already be 24 fps.** `_decode_video_bytes` takes the first
-  N frames with no timestamp or frame-rate awareness, so a 30 fps clip is
-  silently replayed as slow motion with a discontinuity at the seam. Not yet
-  validated by the gateway — STORY_018 adds the check.
-- **`condition_video_keep` is not exposed** because it does not work over HTTP
-  (BUG_003): the server truncates to the first N frames at decode time, so the
-  pipeline's `"last"` selects the last N of N. Trim client-side instead.
+- **Conditioning comes from the END of the clip.** Post the previous clip whole —
+  the gateway decodes it, keeps the final N frames, and forwards those. You do
+  not need to pre-trim. This exists because `condition_video_keep: "last"` is
+  dead over HTTP (BUG_003): the engine truncates to the first N frames at decode
+  time, before the setting is read.
+- **Source clips must be exactly 24 fps.** Rejected with 400 naming the actual
+  rate. The engine decodes by frame count with no timestamp awareness, so any
+  other rate is replayed as slow or fast motion with a discontinuity at the seam.
+  Re-encode with `ffmpeg -r 24` first.
+- **The clip must be at least as long as the conditioning window** (49 frames for
+  `condition_seconds=2.0`). Rejected with 400. A shorter clip would be padded by
+  repeating its final frame, which tells the model the scene has stopped moving —
+  it then generates a frozen scene, with no error anywhere.
+- **`condition_seconds` quantises upward.** The VAE folds 4 pixel frames into 1
+  latent frame, so `2.0` s (48 frames) becomes a **49-frame** window. The response
+  reports the real value in `condition_frames` — trust that, not your request.
+  ⚠️ A client that pre-trims to exactly 2.000 s arrives **one frame short** and is
+  rejected. Post the whole clip, or trim to ≥ 49 frames.
 - The conditioning frames are **part of** `frames`, not additional to it, and
   come back as a VAE round-trip rather than your original pixels. There is no
   audio conditioning — audio under the recycled prefix is invented.
+
+##### Chaining clips
+
+The intended use: render clip 1 from a still (I2V), then condition clip 2 on
+clip 1's final seconds instead of its final frame, so motion carries across the
+seam rather than restarting from a frozen pose.
+
+```bash
+# clip 1 — unchanged, from a still
+curl -F image=@opening.png -F prompt="$(cat script1.txt)" localhost:8002/generate
+
+# clip 2 — post clip 1 whole; the gateway takes its last 2 s
+curl -F video=@clip1.mp4 -F condition_seconds=2.0 \
+     -F prompt="$(cat script2.txt)" localhost:8002/generate
+```
+
+Clip 2's first `condition_frames` frames are a VAE round-trip of clip 1's tail —
+the same footage, slightly shifted in colour. **Discard them when concatenating**,
+or every seam replays two seconds:
+
+```
+final = clip1 + clip2[condition_frames:] + clip3[condition_frames:] + …
+```
 
 #### What the gateway injects (clients never send these)
 
@@ -93,6 +125,7 @@ V2V-specific rules:
 
 Returns the upstream job JSON plus:
 - `mode: "i2v" | "v2v"` — which conditioning path ran, derived from the file field supplied
+- `condition_frames` / `generated_frames` — how the output splits. On V2V the first `condition_frames` are the recycled source tail; drop them when chaining. Both `null` on I2V (nothing to discard)
 - `prompt_source: "upsampled" | "prose"` — whether Opus expanded the prompt
 - `upsample_fallback_reason` — `null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`
 - `upsampler_output` — the exact structured prompt string the upsampler produced and the gateway sent to the engine, for provenance/viewing. `null` on the prose path (`prompt_source: "prose"`), including when an attempted upsample failed and fell back — the field means "what the upsampler produced," not "what ran"

@@ -39,6 +39,7 @@ from fastapi.responses import StreamingResponse
 
 import job_logger
 import upsampler
+import video as video_util
 
 COSMOS = os.environ.get("COSMOS_URL", "http://cosmos3:8000")
 SIDECAR = os.environ.get("SIDECAR_URL", "http://progress:8001")
@@ -51,9 +52,17 @@ FIXED_PARAMS = {
     "fps": str(FPS),
     "max_sequence_length": "4096",
 }
-EXTRA_PARAMS = json.dumps(
-    {"guardrails": False, "use_resolution_template": False, "use_duration_template": False}
-)
+_EXTRA_PARAMS_BASE = {
+    "guardrails": False,
+    "use_resolution_template": False,
+    "use_duration_template": False,
+}
+# Frozen string for the I2V path — byte-identical to what shipped before V2V.
+EXTRA_PARAMS = json.dumps(_EXTRA_PARAMS_BASE)
+
+# Default conditioning window when the client doesn't ask: the engine's own
+# (0, 1) / 5-pixel-frame default. 0.2 s at 24 fps.
+_DEFAULT_CONDITION_SECONDS = 0.2
 
 # End-to-end time model for the elapsed-time progress estimate. vLLM-Omni
 # never moves the `progress` field during a render and the tqdm log bar only
@@ -148,6 +157,7 @@ async def generate(
     seed: int | None = Form(None),
     upsample: bool = Form(True),
     reasoner: str = Form("opus"),
+    condition_seconds: float | None = Form(None),
 ):
     if reasoner not in _VALID_REASONERS:
         raise HTTPException(422, f"reasoner must be one of {list(_VALID_REASONERS)}, got {reasoner!r}")
@@ -165,6 +175,15 @@ async def generate(
         raise HTTPException(400, detail)
     mode = "i2v" if image else "v2v"
     media = image or video
+
+    if mode == "i2v" and condition_seconds is not None:
+        raise HTTPException(
+            400, "condition_seconds applies to video-to-video only; it is meaningless with image="
+        )
+    if condition_seconds is None:
+        condition_seconds = _DEFAULT_CONDITION_SECONDS
+    elif condition_seconds <= 0:
+        raise HTTPException(400, f"condition_seconds must be positive, got {condition_seconds}")
 
     frames = max(5, min(300, frames))
 
@@ -191,6 +210,35 @@ async def generate(
 
     media_bytes = await media.read()
     media_media_type = media.content_type or ("image/png" if mode == "i2v" else "video/mp4")
+
+    # V2V: trim the upload to the conditioning window. The window is taken from
+    # the *end* of the clip — the pipeline chains clips, so clip 2 conditions on
+    # clip 1's final seconds. See gateway/video.py for why this lives here and
+    # not in the engine (BUG_003) or the client.
+    condition_frames = None
+    generated_frames = None
+    extra_params = EXTRA_PARAMS
+    if mode == "v2v":
+        indexes, condition_frames = video_util.condition_window(condition_seconds, FPS)
+        if condition_frames >= frames:
+            raise HTTPException(
+                400,
+                f"condition_seconds={condition_seconds} consumes {condition_frames} of the "
+                f"{frames} requested frames, leaving nothing to generate; lower "
+                f"condition_seconds or raise frames",
+            )
+        try:
+            media_bytes, _source_frames, _ = video_util.prepare_tail(media_bytes, condition_frames)
+        except video_util.ClipError as exc:
+            raise HTTPException(400, str(exc))
+        generated_frames = frames - condition_frames
+        extra_params = json.dumps(
+            {
+                **_EXTRA_PARAMS_BASE,
+                "condition_frame_indexes_vision": ",".join(str(i) for i in indexes),
+            }
+        )
+
     prompt_source = "prose"
     fallback_reason = "disabled_by_request"  # default when upsample=false
 
@@ -239,7 +287,7 @@ async def generate(
         "generate_sound": "true" if sound else "false",
         "sound_duration": str(frames / FPS),
         "seed": str(seed if seed is not None else int.from_bytes(os.urandom(4), "big") % (2**31)),
-        "extra_params": EXTRA_PARAMS,
+        "extra_params": extra_params,
         **FIXED_PARAMS,
     }
     # One wire field for both modes: the engine sniffs the bytes (image decode
@@ -253,6 +301,11 @@ async def generate(
         raise HTTPException(resp.status_code, resp.text)
     job = resp.json()
     job["mode"] = mode  # "i2v" (image conditioning) | "v2v" (clip continuation)
+    # How the output splits. On v2v the first `condition_frames` frames are a VAE
+    # round-trip of the source clip's tail — clients chaining clips discard them
+    # and concatenate `clip[condition_frames:]`. Null on i2v: nothing to discard.
+    job["condition_frames"] = condition_frames
+    job["generated_frames"] = generated_frames
     job["prompt_source"] = prompt_source  # "upsampled" | "prose"
     # null when upsampled; otherwise why the gateway used the prose defaults:
     # "disabled_by_request" | "no_api_key" | "refusal" | "invalid_json" | "api_error: …"
@@ -267,6 +320,8 @@ async def generate(
             _JOB_META.pop(next(iter(_JOB_META)))
         _JOB_META[video_id] = {
             "mode": mode,
+            "condition_frames": condition_frames,
+            "generated_frames": generated_frames,
             "prompt_source": job["prompt_source"],
             "upsample_fallback_reason": job["upsample_fallback_reason"],
             "upsampler_output": job["upsampler_output"],
@@ -287,6 +342,7 @@ async def generate(
             seed=form["seed"],
             upsample=upsample,
             mode=mode,
+            condition_frames=condition_frames,
             image_filename=media.filename,
             image_media_type=media_media_type,
             upsampler_output=full_prompt if prompt_source == "upsampled" else None,
@@ -344,6 +400,8 @@ async def job_status(video_id: str):
     # params stored alongside them).
     if meta := _JOB_META.get(video_id):
         status["mode"] = meta.get("mode")
+        status["condition_frames"] = meta.get("condition_frames")
+        status["generated_frames"] = meta.get("generated_frames")
         status["prompt_source"] = meta.get("prompt_source")
         status["upsample_fallback_reason"] = meta.get("upsample_fallback_reason")
         status["upsampler_output"] = meta.get("upsampler_output")
