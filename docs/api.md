@@ -17,7 +17,8 @@ Clients send only creative intent. The gateway handles everything else.
 
 | Field | Type | Default | Notes |
 |---|---|---|---|
-| `image` | file | required | conditioning frame (PNG/JPEG/WebP) |
+| `image` | file | one of | conditioning frame (PNG/JPEG/WebP) → **image-to-video** |
+| `video` | file | one of | conditioning clip (MP4) → **video-to-video** (continuation) |
 | `prompt` | string | required | prose brief; upsampler expands to structured JSON |
 | `size` | string | `720x1280` | `WxH`; must be in `RESOLUTION_RATIO_DICT`. 400 if unsupported. |
 | `frames` | int | `189` | frame count, clamped 5–300; 189 ≈ 7.9 s |
@@ -25,6 +26,46 @@ Clients send only creative intent. The gateway handles everything else.
 | `sound` | bool | `true` | audio generation on/off |
 | `upsample` | bool | `true` | expand prompt via Opus before sending to engine |
 | `seed` | int | (random) | optional; gateway generates if omitted |
+
+#### Mode is selected by which file field you populate
+
+**Exactly one of `image` / `video` is required** — sending both, or neither, is a
+400. There is no mode flag, and that is deliberate: vLLM-Omni has no V2V field in
+its wire protocol. It decodes `input_reference` (image decode first, video decode
+as fallback) and branches on what it got — `is_v2v = video_tensor is not None`.
+A boolean could therefore only *assert* the mode, never select it, so the
+gateway mirrors the engine and dispatches on the media itself.
+
+```bash
+curl -F image=@still.png  -F prompt='…' localhost:8002/generate   # i2v
+curl -F video=@clip.mp4   -F prompt='…' localhost:8002/generate   # v2v
+```
+
+V2V-specific rules:
+
+- **`frames` must be of the form 4k+1** (189, 237, …). The WAN VAE folds 4 pixel
+  frames into 1 latent frame; any other count makes the encoded conditioning
+  latent disagree with the noise tensor and the engine raises
+  `Cosmos3 V2V latent shape mismatch`. The gateway returns 400 up front and
+  names the nearest valid counts. *(The same maths governs I2V, but that path is
+  left unvalidated for now — no I2V request has ever been rejected for it.)*
+- **`upsample` is forced off** and the response reports
+  `upsample_fallback_reason: "v2v_not_supported"`. The current template describes
+  a *starting frame*; pointed at a clip it would describe frame 0 as a still and
+  throw away the motion history. STORY_019 vendors the continuation template.
+- **Conditioning length is not yet client-controllable.** The engine default of
+  `condition_frame_indexes_vision = (0, 1)` applies — 5 pixel frames, matching
+  the `T_cond = 2` recipe from Cosmos 3 pre-training. STORY_018 exposes it.
+- **Source clips must already be 24 fps.** `_decode_video_bytes` takes the first
+  N frames with no timestamp or frame-rate awareness, so a 30 fps clip is
+  silently replayed as slow motion with a discontinuity at the seam. Not yet
+  validated by the gateway — STORY_018 adds the check.
+- **`condition_video_keep` is not exposed** because it does not work over HTTP
+  (BUG_003): the server truncates to the first N frames at decode time, so the
+  pipeline's `"last"` selects the last N of N. Trim client-side instead.
+- The conditioning frames are **part of** `frames`, not additional to it, and
+  come back as a VAE round-trip rather than your original pixels. There is no
+  audio conditioning — audio under the recycled prefix is invented.
 
 #### What the gateway injects (clients never send these)
 
@@ -51,13 +92,16 @@ Clients send only creative intent. The gateway handles everything else.
 #### Response
 
 Returns the upstream job JSON plus:
+- `mode: "i2v" | "v2v"` — which conditioning path ran, derived from the file field supplied
 - `prompt_source: "upsampled" | "prose"` — whether Opus expanded the prompt
 - `upsample_fallback_reason` — `null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`
 - `upsampler_output` — the exact structured prompt string the upsampler produced and the gateway sent to the engine, for provenance/viewing. `null` on the prose path (`prompt_source: "prose"`), including when an attempted upsample failed and fell back — the field means "what the upsampler produced," not "what ran"
 
 These fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart).
 
-**HTTP 400** is returned (before any API tokens are spent) if: `size` is not in `RESOLUTION_RATIO_DICT`, duration exceeds `"10s"` (240 frames at 24 fps), or `steps` is not 35 or 50.
+**HTTP 400** is returned (before any API tokens are spent) if: `size` is not in `RESOLUTION_RATIO_DICT`, duration exceeds `"10s"` (240 frames at 24 fps), `steps` is not 35 or 50, both or neither of `image`/`video` were supplied, or `video` was supplied with a `frames` count that is not 4k+1.
+
+Note the duration ceiling is **NVIDIA's, not ours**: `data/upsampler_schema.json` (vendored) restricts `duration` to `'2s'`–`'10s'`, and `upsampler._ALLOWED_DURATIONS` mirrors it. Widening it would put an out-of-distribution value in the structured prompt.
 
 | Method | Path | Notes |
 | GET | `/jobs/{id}` | upstream status with a **moving progress bar**: a gateway elapsed-time estimate (`progress_source: "estimate"`, `eta_s` = expected − elapsed) that climbs as the render runs, capped at 99; the log sidecar then pins it to 99 (`progress_source: "sidecar"`) once denoise finishes (the VAE/audio/encode tail), and it snaps to 100 on completion. Progress is `max(server, estimate)` so a future real server value would win |

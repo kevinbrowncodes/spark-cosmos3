@@ -19,14 +19,14 @@ See **Architecture** below for the full technical picture.
 
 ```
 data/          canonical config (neg.json, audio.txt, story/)
-docs/          API reference, notes, technical report, bug/, backlog/
+docs/          API reference, notes, technical report, bug/, backlog/, epic/
 gateway/       Python gateway service (server.py — the core of this repo)
 progress-sidecar/  log-parsing progress sidecar
 scripts/       sync_config.sh, download_models.sh
 docker-compose.yml
 ```
 
-`data/story/` holds all feature story files. `docs/bug/` and `docs/backlog/` hold bug tickets and backlog items.
+`data/story/` holds all feature story files. `docs/bug/`, `docs/backlog/`, and `docs/epic/` hold bug tickets, backlog items, and epics.
 
 ---
 
@@ -67,6 +67,19 @@ docker-compose.yml
 - Do **not** implement directly from backlog items
 - Once an item is clear and prioritized, convert it to a `data/story/STORY_NNN_*.md` file before any code is written
 - After promotion to story, remove or archive the backlog item and link to the new story
+
+---
+
+## 3d. How Epics Are Tracked
+
+> Epics live in `docs/epic/EPIC_NNN_short_slug.md`. Use an **epic** to group several related stories under one goal when a feature is too large for a single story.
+
+- Epic numbers are three-digit zero-padded: `EPIC_001`, `EPIC_002`, …
+- Each epic follows this format: **Goal**, **Scope** (including what is explicitly out of scope), **Shared Technical Constraints**, **Stories** table, **Known Limitations**, **Definition of Done**
+- The epic holds what is true for *every* story in it — shared arithmetic, budgets, constraints, and limitations. Implementation detail that belongs to one story stays in that story.
+- Stories remain in `data/story/` and are still implemented **one at a time**, lowest number first
+- An epic is not a substitute for a story — no code is written from an epic
+- Epics are never deleted; mark one `Done` when every story in it has closed
 
 ---
 
@@ -233,6 +246,7 @@ N/A for memory on GB10. The only trustworthy check is **`free -h`**.
   https://arxiv.org/abs/2606.02800
 - `docs/bug/` — bug tickets (`BUG_NNN_short_slug.md`)
 - `docs/backlog/` — backlog items (`BACKLOG_NNN_short_slug.md`)
+- `docs/epic/` — epics grouping related stories (`EPIC_NNN_short_slug.md`)
 
 ---
 

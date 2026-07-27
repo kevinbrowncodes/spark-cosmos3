@@ -10,10 +10,13 @@ the house contract before forwarding to vLLM-Omni:
   (generate_sound/sound_duration — never enable_audio)
 
 Endpoints:
-    POST   /generate            multipart: image (file), prompt,
+    POST   /generate            multipart: image OR video (file), prompt,
                                 [size=720x1280, frames=189,
                                  steps=35, sound=true,
                                  seed]                  -> upstream job JSON
+                                image -> image-to-video, video -> video-to-
+                                video (continuation). Exactly one is required;
+                                the populated field selects the mode.
     GET    /jobs/{id}           status; merges REAL progress from the
                                 progress sidecar when fresh + id-matched
     GET    /jobs/{id}/content   streams the MP4
@@ -116,10 +119,27 @@ async def health():
 
 _VALID_REASONERS = ("opus", "aeon")
 
+# The WAN VAE compresses 4 pixel frames into 1 latent frame, so a video's frame
+# count must be 4k+1 for the encoded conditioning latent to match the noise
+# tensor. On the V2V path the engine enforces this with a hard
+# "Cosmos3 V2V latent shape mismatch" (pipeline_cosmos3.py _prepare_latents_v2v);
+# catching it here turns an hour-deep 500 into an immediate 400.
+_VAE_TEMPORAL_COMPRESSION = 4
+
+
+def _is_valid_frame_count(frames: int) -> bool:
+    return (frames - 1) % _VAE_TEMPORAL_COMPRESSION == 0
+
+
+def _nearest_frame_counts(frames: int) -> tuple[int, int]:
+    lo = ((frames - 1) // _VAE_TEMPORAL_COMPRESSION) * _VAE_TEMPORAL_COMPRESSION + 1
+    return lo, lo + _VAE_TEMPORAL_COMPRESSION
+
 
 @app.post("/generate")
 async def generate(
-    image: UploadFile = File(...),
+    image: UploadFile | None = File(None),
+    video: UploadFile | None = File(None),
     prompt: str = Form(...),
     size: str = Form("720x1280"),
     frames: int = Form(189),
@@ -132,7 +152,32 @@ async def generate(
     if reasoner not in _VALID_REASONERS:
         raise HTTPException(422, f"reasoner must be one of {list(_VALID_REASONERS)}, got {reasoner!r}")
 
+    # Mode dispatch (STORY_017). The engine has no V2V flag — it decodes
+    # input_reference and branches on what it got (image -> I2V, video -> V2V,
+    # pipeline_cosmos3.py: `is_v2v = video_tensor is not None`). So the mode is
+    # selected by *which* file field the client populated, not by a boolean; a
+    # flag could only ever assert what the bytes already determine.
+    if bool(image) == bool(video):
+        detail = (
+            "send exactly one of image= (image-to-video) or video= (video-to-video); "
+            + ("both were supplied" if image else "neither was supplied")
+        )
+        raise HTTPException(400, detail)
+    mode = "i2v" if image else "v2v"
+    media = image or video
+
     frames = max(5, min(300, frames))
+
+    # V2V only, deliberately: the same 4k+1 rule governs the I2V latent maths,
+    # but no I2V request has ever been rejected for it and this story must not
+    # change the I2V path. Widening it needs an empirical check first.
+    if mode == "v2v" and not _is_valid_frame_count(frames):
+        lo, hi = _nearest_frame_counts(frames)
+        raise HTTPException(
+            400,
+            f"frames must be of the form 4k+1 for video-to-video (the VAE compresses "
+            f"4 pixel frames into 1 latent frame); got {frames}, nearest valid are {lo} and {hi}",
+        )
 
     if steps not in (35, 50):
         raise HTTPException(400, f"steps must be 35 (default) or 50 (high quality), got {steps}")
@@ -144,10 +189,19 @@ async def generate(
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
-    image_bytes = await image.read()
-    image_media_type = image.content_type or "image/png"
+    media_bytes = await media.read()
+    media_media_type = media.content_type or ("image/png" if mode == "i2v" else "video/mp4")
     prompt_source = "prose"
     fallback_reason = "disabled_by_request"  # default when upsample=false
+
+    # The upsampler template describes a *starting frame* — pointed at a clip it
+    # would produce a still-life description of frame 0 and discard the motion
+    # history that is the entire reason to use V2V. STORY_019 vendors the
+    # continuation template; until then force the prose path and say so, rather
+    # than silently degrading the prompt.
+    if mode == "v2v" and upsample:
+        upsample = False
+        fallback_reason = "v2v_not_supported"
 
     # Structured-prompt upgrade path (tech report §6.3.2): expand the prose
     # brief into the Appendix A JSON via the upsampler. Any failure falls
@@ -157,7 +211,7 @@ async def generate(
     if upsample:
         structured, fallback_reason, upsampler_meta = await upsampler.upsample(
             prompt=prompt.rstrip(),
-            image_bytes=image_bytes,
+            image_bytes=media_bytes,
             size=size,
             num_frames=frames,
             fps=FPS,
@@ -188,14 +242,17 @@ async def generate(
         "extra_params": EXTRA_PARAMS,
         **FIXED_PARAMS,
     }
+    # One wire field for both modes: the engine sniffs the bytes (image decode
+    # first, video decode as fallback) and picks the path from the result.
     files = {
-        "input_reference": (image.filename, image_bytes, image_media_type)
+        "input_reference": (media.filename, media_bytes, media_media_type)
     }
     async with httpx.AsyncClient(timeout=60) as client:
         resp = await client.post(f"{COSMOS}/v1/videos", data=form, files=files)
     if resp.status_code >= 400:
         raise HTTPException(resp.status_code, resp.text)
     job = resp.json()
+    job["mode"] = mode  # "i2v" (image conditioning) | "v2v" (clip continuation)
     job["prompt_source"] = prompt_source  # "upsampled" | "prose"
     # null when upsampled; otherwise why the gateway used the prose defaults:
     # "disabled_by_request" | "no_api_key" | "refusal" | "invalid_json" | "api_error: …"
@@ -209,6 +266,7 @@ async def generate(
         while len(_JOB_META) >= _JOB_META_MAX:
             _JOB_META.pop(next(iter(_JOB_META)))
         _JOB_META[video_id] = {
+            "mode": mode,
             "prompt_source": job["prompt_source"],
             "upsample_fallback_reason": job["upsample_fallback_reason"],
             "upsampler_output": job["upsampler_output"],
@@ -228,8 +286,9 @@ async def generate(
             generate_sound=sound,
             seed=form["seed"],
             upsample=upsample,
-            image_filename=image.filename,
-            image_media_type=image_media_type,
+            mode=mode,
+            image_filename=media.filename,
+            image_media_type=media_media_type,
             upsampler_output=full_prompt if prompt_source == "upsampled" else None,
             upsampler_fallback_reason=job["upsample_fallback_reason"],
             upsampler_meta=upsampler_meta,
@@ -284,6 +343,7 @@ async def job_status(video_id: str):
     # Expose only the client-facing meta fields (not the internal estimator
     # params stored alongside them).
     if meta := _JOB_META.get(video_id):
+        status["mode"] = meta.get("mode")
         status["prompt_source"] = meta.get("prompt_source")
         status["upsample_fallback_reason"] = meta.get("upsample_fallback_reason")
         status["upsampler_output"] = meta.get("upsampler_output")
