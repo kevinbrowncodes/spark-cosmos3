@@ -49,6 +49,39 @@ I2V_IMAGE_NOTE = (
 )
 
 
+# V2V variant (STORY_019). Transcribed from the technical report's own V2V
+# upsampler user message (docs/cosmos-3-technical-report.md line 2349) — the
+# ordering of scene_imagination -> temporal_caption -> audio_description and the
+# "conditioning video is ground truth for the prefix, text is future intent"
+# framing are NVIDIA's, not ours. Kept as constants rather than a data/ file
+# because data/ holds files pulled verbatim from cosmos-framework (see
+# data/SOURCES.md, "Do not hand-edit"); there is no upstream V2V template to
+# vendor, and the shared base template is already vendored.
+V2V_INTRO = (
+    "Given the attached frames, sampled in order from a conditioning video that "
+    "immediately precedes the video to be produced, and the user's "
+    "natural-language request below"
+)
+V2V_VIDEO_NOTE = (
+    "\nIMPORTANT - CONDITIONING VIDEO INPUT: The attached frames are consecutive "
+    "samples from the END of a conditioning video. Treat them as definitive "
+    "visual and temporal ground truth for what has ALREADY happened. The "
+    "natural-language request describes future/action intent — what happens NEXT.\n"
+    "The video you are describing STARTS where the final attached frame ends. "
+    "It is a continuation, not a retelling.\n"
+    "1. Write scene_imagination first, summarising the conditioning video's "
+    "state, subjects, motion history, and final visible configuration.\n"
+    "2. Write temporal_caption second as the future playback timeline that "
+    "FOLLOWS the conditioning video, preserving continuity with the observed "
+    "motion. Do NOT re-narrate the attached frames — the first moment you "
+    "describe is the moment after the last attached frame.\n"
+    "3. Write audio_description third, aligned with visible future events.\n"
+    "4. Preserve concrete facts from the conditioning frames: subject "
+    "appearance, setting, lighting, colours, and the direction and speed of "
+    "any motion already underway.\n"
+)
+
+
 def build_nl_description(
     prompt: str,
     *,
@@ -73,8 +106,13 @@ def build_upsampler_prompt(
     aspect_ratio: str,
     duration: str,
     fps: int,
+    mode: str = "i2v",
 ) -> str:
-    """Assemble the official NVIDIA I2V upsampler prompt from vendored template."""
+    """Assemble the NVIDIA upsampler prompt from the vendored template.
+
+    `mode` swaps the two template slots the base file exposes: I2V describes a
+    starting frame, V2V describes a continuation of motion already underway.
+    """
     nl = build_nl_description(
         prompt, resolution=resolution, aspect_ratio=aspect_ratio,
         duration=duration, fps=fps,
@@ -84,8 +122,8 @@ def build_upsampler_prompt(
         indent=2,
     )
     return TEMPLATE.substitute(
-        intro=I2V_INTRO,
-        image_note=I2V_IMAGE_NOTE,
+        intro=V2V_INTRO if mode == "v2v" else I2V_INTRO,
+        image_note=V2V_VIDEO_NOTE if mode == "v2v" else I2V_IMAGE_NOTE,
         json_template=SCHEMA,
         nl_description=nl,
         resolution_ratio_dict=rrd_text,
@@ -220,14 +258,19 @@ _SAMPLING_PARAMS = {"max_tokens": 8192}
 
 async def upsample(
     prompt: str,
-    image_bytes: bytes,
+    image_bytes: bytes | list[bytes],
     size: str,
     num_frames: int,
     fps: int,
     generate_sound: bool,
     reasoner: str = "opus",
+    mode: str = "i2v",
+    condition_frames: int = 0,
 ) -> tuple[str | None, str | None, dict | None]:
     """Expand a prose brief into the structured JSON prompt.
+
+    `image_bytes` is one still on the I2V path, or an ordered list of stills
+    sampled from the conditioning window on the V2V path.
 
     Returns (json_string, None, meta) on success, or (None, reason, None/meta)
     on failure — the caller falls back to the prose path and reports the reason
@@ -241,24 +284,33 @@ async def upsample(
     if reasoner == "opus" and not available():
         return None, "no_api_key", None
 
+    # On V2V the JSON's `duration` describes the CONTINUATION, not the whole
+    # output. NVIDIA's own V2V contract does this: the Physics-IQ protocol
+    # conditions on 3 s, predicts 5 s, and the template pins duration="0:05".
+    # Describing the total would tell the model to fit the future into a window
+    # that is partly already spent.
+    duration_frames = num_frames - condition_frames if mode == "v2v" else num_frames
+
     try:
-        resolution, aspect_ratio, duration = _parse_size(size, num_frames, fps)
+        resolution, aspect_ratio, duration = _parse_size(size, duration_frames, fps)
     except ValueError as exc:
         print(f"upsampler: invalid size — {exc}", flush=True)
         return None, "invalid_size", None
 
     user_text = build_upsampler_prompt(
         prompt, resolution=resolution, aspect_ratio=aspect_ratio,
-        duration=duration, fps=fps,
+        duration=duration, fps=fps, mode=mode,
     )
+
+    images = image_bytes if isinstance(image_bytes, list) else [image_bytes]
 
     if reasoner == "aeon":
         return await _upsample_aeon(
-            user_text, image_bytes, generate_sound,
+            user_text, images, generate_sound,
             resolution, aspect_ratio, duration, fps,
         )
     return await _upsample_opus(
-        user_text, image_bytes, generate_sound,
+        user_text, images, generate_sound,
         resolution, aspect_ratio, duration, fps,
     )
 
@@ -269,7 +321,7 @@ async def upsample(
 
 async def _upsample_opus(
     user_text: str,
-    image_bytes: bytes,
+    images: list[bytes],
     generate_sound: bool,
     resolution: str,
     aspect_ratio: str,
@@ -289,7 +341,9 @@ async def _upsample_opus(
                     {
                         "role": "user",
                         "content": [
-                            _image_block(image_bytes),  # image first (framework order)
+                            # Images first (framework order); on V2V these are
+                            # in temporal order, oldest to newest.
+                            *[_image_block(b) for b in images],
                             {"type": "text", "text": user_text},
                         ],
                     }
@@ -375,28 +429,30 @@ async def _upsample_opus(
 
 async def _upsample_aeon(
     user_text: str,
-    image_bytes: bytes,
+    images: list[bytes],
     generate_sound: bool,
     resolution: str,
     aspect_ratio: str,
     duration: str,
     fps: int,
 ) -> tuple[str | None, str | None, dict | None]:
-    media_type = _detect_media_type(image_bytes)
-    b64 = base64.standard_b64encode(image_bytes).decode("ascii")
+    image_parts = [
+        {
+            "type": "image_url",
+            "image_url": {
+                "url": f"data:{_detect_media_type(b)};base64,"
+                       f"{base64.standard_b64encode(b).decode('ascii')}"
+            },
+        }
+        for b in images
+    ]
     payload = {
         "model": _AEON_MODEL,
         "max_tokens": 8192,
         "messages": [
             {
                 "role": "user",
-                "content": [
-                    {
-                        "type": "image_url",
-                        "image_url": {"url": f"data:{media_type};base64,{b64}"},
-                    },
-                    {"type": "text", "text": user_text},
-                ],
+                "content": [*image_parts, {"type": "text", "text": user_text}],
             }
         ],
     }

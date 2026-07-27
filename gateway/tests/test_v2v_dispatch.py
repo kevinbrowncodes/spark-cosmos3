@@ -145,16 +145,11 @@ class TestFrameCountRule:
         assert resp.status_code == 200
 
 
-class TestUpsamplerForcedOffUntilStory019:
-    def test_v2v_with_upsample_true_falls_back_to_prose(self):
-        resp, captured = _post(_VIDEO, data={"upsample": "true"})
-        assert resp.status_code == 200
-        body = resp.json()
-        assert body["prompt_source"] == "prose"
-        assert body["upsample_fallback_reason"] == "v2v_not_supported"
-        assert body["upsampler_output"] is None
-        # The prose brief, not a structured prompt, reached the engine.
-        assert captured["data"]["prompt"] == "a cat knocks a glass off a table"
+class TestUpsamplerOnV2V:
+    # STORY_017 forced upsample off on V2V and reported
+    # "v2v_not_supported"; STORY_019 removed that by vendoring the
+    # continuation template. The V2V upsampler contract is covered in
+    # test_v2v_upsampler.py — this only guards the I2V path here.
 
     def test_i2v_still_upsamples(self):
         resp, _ = _post(_IMAGE, data={"upsample": "true"})

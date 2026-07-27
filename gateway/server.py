@@ -64,6 +64,11 @@ EXTRA_PARAMS = json.dumps(_EXTRA_PARAMS_BASE)
 # (0, 1) / 5-pixel-frame default. 0.2 s at 24 fps.
 _DEFAULT_CONDITION_SECONDS = 0.2
 
+# Stills handed to the reasoner on the V2V path. Enough to convey direction and
+# speed of motion rather than a single pose; more would cost tokens for little
+# extra signal at 2 s of source.
+_V2V_PROMPT_FRAMES = 5
+
 # End-to-end time model for the elapsed-time progress estimate. vLLM-Omni
 # never moves the `progress` field during a render and the tqdm log bar only
 # flushes at the end (docs/api.md), so a *moving* bar must come from
@@ -242,29 +247,33 @@ async def generate(
     prompt_source = "prose"
     fallback_reason = "disabled_by_request"  # default when upsample=false
 
-    # The upsampler template describes a *starting frame* — pointed at a clip it
-    # would produce a still-life description of frame 0 and discard the motion
-    # history that is the entire reason to use V2V. STORY_019 vendors the
-    # continuation template; until then force the prose path and say so, rather
-    # than silently degrading the prompt.
-    if mode == "v2v" and upsample:
-        upsample = False
-        fallback_reason = "v2v_not_supported"
-
     # Structured-prompt upgrade path (tech report §6.3.2): expand the prose
     # brief into the Appendix A JSON via the upsampler. Any failure falls
     # back to the prose path below, with the reason reported to the client.
     full_prompt = None
     upsampler_meta = None
     if upsample:
+        # Opus cannot read video, so V2V shows it stills sampled from the same
+        # window the engine conditions on (STORY_019) — sampling the original
+        # upload instead would describe motion the model never sees.
+        if mode == "v2v":
+            try:
+                reasoner_input = video_util.sample_frames(media_bytes, _V2V_PROMPT_FRAMES)
+            except video_util.ClipError as exc:
+                raise HTTPException(400, str(exc))
+        else:
+            reasoner_input = media_bytes
+
         structured, fallback_reason, upsampler_meta = await upsampler.upsample(
             prompt=prompt.rstrip(),
-            image_bytes=media_bytes,
+            image_bytes=reasoner_input,
             size=size,
             num_frames=frames,
             fps=FPS,
             generate_sound=sound,
             reasoner=reasoner,
+            mode=mode,
+            condition_frames=condition_frames or 0,
         )
         if fallback_reason == "invalid_size":
             raise HTTPException(400, f"size {size!r} is not supported; see RESOLUTION_RATIO_DICT for valid sizes")

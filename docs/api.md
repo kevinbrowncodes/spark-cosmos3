@@ -50,10 +50,16 @@ V2V-specific rules:
   `Cosmos3 V2V latent shape mismatch`. The gateway returns 400 up front and
   names the nearest valid counts. *(The same maths governs I2V, but that path is
   left unvalidated for now — no I2V request has ever been rejected for it.)*
-- **`upsample` is forced off** and the response reports
-  `upsample_fallback_reason: "v2v_not_supported"`. The current template describes
-  a *starting frame*; pointed at a clip it would describe frame 0 as a still and
-  throw away the motion history. STORY_019 vendors the continuation template.
+- **`upsample` works**, using a continuation-specific template: the conditioning
+  clip is ground truth for what has *already happened*, and your prompt is intent
+  for what happens *next*. The reasoner is shown 5 stills sampled across the
+  conditioning window (Opus cannot read video), so it sees direction and speed of
+  motion rather than one pose.
+- **The `duration` in the structured prompt is the *generated* length**, not the
+  whole output — `(frames - condition_frames) / fps`. This follows NVIDIA's own
+  V2V contract, where the Physics-IQ protocol conditions on 3 s, predicts 5 s, and
+  pins `duration="0:05"`. Describing the total would ask the model to fit the
+  future into a window that is partly already spent.
 - **Conditioning comes from the END of the clip.** Post the previous clip whole —
   the gateway decodes it, keeps the final N frames, and forwards those. You do
   not need to pre-trim. This exists because `condition_video_keep: "last"` is

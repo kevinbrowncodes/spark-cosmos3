@@ -60,6 +60,50 @@ def condition_window(condition_seconds: float, fps: int = FPS) -> tuple[tuple[in
     return tuple(range(max_index + 1)), max_index * VAE_TEMPORAL_COMPRESSION + 1
 
 
+def _encode_jpeg(frame) -> bytes:
+    """One decoded frame -> JPEG bytes. An mjpeg container holding a single
+    frame *is* a JPEG file, which avoids a Pillow dependency."""
+    out = io.BytesIO()
+    with av.open(out, mode="w", format="mjpeg") as oc:
+        stream = oc.add_stream("mjpeg", rate=1)
+        stream.width, stream.height, stream.pix_fmt = frame.width, frame.height, "yuvj420p"
+        for packet in stream.encode(frame.reformat(format="yuvj420p")):
+            oc.mux(packet)
+        for packet in stream.encode():
+            oc.mux(packet)
+    return out.getvalue()
+
+
+def sample_frames(video_bytes: bytes, count: int) -> list[bytes]:
+    """Evenly-spaced JPEG stills across a clip, for showing a reasoner the motion.
+
+    Opus cannot consume video, so the V2V upsampler is given stills instead
+    (STORY_019). They must be drawn from the *same* window the engine conditions
+    on — call this on the already-trimmed clip, never the original upload, or the
+    prompt will describe motion the model was never shown.
+
+    The last frame is always included: the continuation starts from there, and
+    it is the single most important frame for describing "final visible
+    configuration" per NVIDIA's V2V contract.
+    """
+    if count < 1:
+        raise ClipError(f"frame sample count must be positive, got {count}")
+    try:
+        with av.open(io.BytesIO(video_bytes)) as container:
+            frames = list(container.decode(video=0))
+    except Exception as exc:
+        raise ClipError(f"could not decode the clip for frame sampling: {exc}") from exc
+    if not frames:
+        raise ClipError("clip decoded to zero frames")
+
+    if count >= len(frames):
+        picked = frames
+    else:
+        step = (len(frames) - 1) / (count - 1) if count > 1 else 0
+        picked = [frames[round(i * step)] for i in range(count)]
+    return [_encode_jpeg(f) for f in picked]
+
+
 def _stream_fps(stream) -> Fraction:
     rate = stream.average_rate or stream.guessed_rate
     if rate is None:

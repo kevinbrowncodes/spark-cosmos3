@@ -10,7 +10,13 @@ happens **next** instead of describing the opening frame all over again.
 ## Acceptance Criteria
 
 - [ ] `upsample=true` works on the V2V path — the `"v2v_not_supported"` fallback from STORY_017 is removed
-- [ ] A V2V-specific upsampler template is vendored into `data/` alongside the existing I2V template
+- [ ] A V2V-specific intro + instruction block exists alongside the I2V one, selected by mode
+      *(amended before implementation: these live as constants in `gateway/upsampler.py`, mirroring
+      `I2V_INTRO` / `I2V_IMAGE_NOTE`, not as a new `data/` file. `data/` holds artifacts pulled
+      verbatim from cosmos-framework and marked "Do not hand-edit" in `data/SOURCES.md`, with a
+      drift-checker script; there is no upstream V2V template to vendor, and the shared base
+      template — the actual vendored artifact — is already there and is parameterised by
+      `$intro` / `$image_note`.)*
 - [ ] The upsampler is given real motion context from the source clip, not a single frame
 - [ ] `scene_imagination` summarises the source clip's subjects, motion history, and final visible configuration
 - [ ] `temporal_caption` is the **future** timeline beginning where the source clip ends — it does not re-narrate the source
@@ -18,7 +24,7 @@ happens **next** instead of describing the opening frame all over again.
 - [ ] `audio_description` covers the generated span only
 - [ ] The V2V template is selectable with both reasoners (`opus`, `aeon`), matching STORY_015
 - [ ] `upsampler_output` echoes the V2V structured prompt exactly, per the STORY_016 contract
-- [ ] `./scripts/sync_config.sh --check` is clean after the new template lands in `data/`
+- [ ] `./scripts/sync_config.sh --check` stays clean (no `data/` change is expected — see the amended criterion above)
 
 ## Technical Notes
 
