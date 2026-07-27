@@ -10,17 +10,17 @@ frozen pose.
 
 ## Acceptance Criteria
 
-- [ ] `POST /generate` accepts `condition_seconds` (float, default `0.2` ≈ the engine's 5-frame default)
-- [ ] The gateway translates `condition_seconds` into `condition_frame_indexes_vision` and injects it into `extra_params`
-- [ ] `condition_seconds=2.0` produces `condition_frame_indexes_vision = "0,1,…,12"` (49 pixel frames)
-- [ ] **The gateway trims the uploaded clip to its final N frames before forwarding**, so conditioning comes from the *end* of the source clip
-- [ ] A full-length previous clip can be posted as-is — the client is not required to pre-trim
-- [ ] The gateway **rejects with 400** any request whose uploaded clip contains fewer real frames than the conditioning window requires
-- [ ] The gateway **rejects with 400** a source clip whose frame rate is not 24 fps, naming the actual rate
-- [ ] `condition_seconds` is rejected if it would consume ≥ `frames` (nothing left to generate)
-- [ ] The response reports `condition_frames` and `generated_frames` so clients know how much of the output to discard when splicing
-- [ ] `condition_seconds` on the I2V path returns 400 — it is meaningless without video
-- [ ] `docs/api.md` documents the field, the tail-trimming behaviour, the 24 fps precondition, the minimum-frames rule, and the splice formula
+- [x] `POST /generate` accepts `condition_seconds` (float, default `0.2` ≈ the engine's 5-frame default)
+- [x] The gateway translates `condition_seconds` into `condition_frame_indexes_vision` and injects it into `extra_params`
+- [x] `condition_seconds=2.0` produces `condition_frame_indexes_vision = "0,1,…,12"` (49 pixel frames)
+- [x] **The gateway trims the uploaded clip to its final N frames before forwarding**, so conditioning comes from the *end* of the source clip
+- [x] A full-length previous clip can be posted as-is — the client is not required to pre-trim
+- [x] The gateway **rejects with 400** any request whose uploaded clip contains fewer real frames than the conditioning window requires
+- [x] The gateway **rejects with 400** a source clip whose frame rate is not 24 fps, naming the actual rate
+- [x] `condition_seconds` is rejected if it would consume ≥ `frames` (nothing left to generate)
+- [x] The response reports `condition_frames` and `generated_frames` so clients know how much of the output to discard when splicing
+- [x] `condition_seconds` on the I2V path returns 400 — it is meaningless without video
+- [x] `docs/api.md` documents the field, the tail-trimming behaviour, the 24 fps precondition, the minimum-frames rule, and the splice formula
 
 ## Technical Notes
 

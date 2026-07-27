@@ -58,20 +58,35 @@ training context (technical report Fig. 10, line 772). Roughly 13% headroom.
 is the tightest configuration in the epic; do not extend further without
 redoing this calculation.
 
-**The progress estimate already over-predicts — measured during STORY_017.**
-The first V2V smoke run (832×480×189, 35 steps, sound on — exactly the reference
-volume, so `scale = 1`) completed in a reported `inference_time_s` of **558.6 s**.
-The gateway model predicts `35 · 13.02 + 423 ≈ 878 s` for that job: a **57%
-over-estimate**. Decomposing, either the denoise anchor holds and the tail is
-~103 s rather than 423 s, or the 13.02 s/step figure is high. The 423 s tail was
-derived by subtraction from a single 50-step job, so it is the more suspect
-constant.
+**The progress estimate over-predicts, and the tail constant is why — measured.**
+Two V2V runs at exactly the reference volume (832×480×189, 35 steps, sound on,
+so `scale = 1`), the second with `seconds_per_step` captured from the sidecar:
 
-Resolving this needs `seconds_per_step` from `:8001/progress` captured *during*
-a run — the STORY_017 smoke poller only recorded gateway-side progress, so the
-decomposition is not yet possible. **Capture it on the next V2V run before
-refitting.** Do not simply scale the existing constants to fit one new point;
-denoise and tail need separating first.
+| Run | `inference_time_s` | measured s/step | implied tail |
+|---|---|---|---|
+| STORY_017 smoke | 558.6 s | (not captured) | ~107 s |
+| STORY_018 chain | **503.1 s** | **12.9** | **51.6 s** |
+
+The gateway model predicts `35 · 13.02 + 423 = 878 s` for these jobs — a 57–75%
+over-estimate.
+
+**`_REF_S_PER_STEP` is right; `_REF_TAIL_S` is wrong.** The measured 12.9 s/step
+all but matches the 13.02 anchor, which leaves the tail as the entire error:
+~52 s measured against a 423 s constant, roughly **8× too high**. The 423 s
+figure was never measured directly — it was derived by subtracting
+`50 · 13.02` from a single 50-step job's 1073.8 s. Since the per-step anchor is
+now confirmed, that subtraction cannot be reconciled with these runs; the
+anchor job most likely included time that is not per-render tail (model load or
+queue), or was not the volume it was recorded as.
+
+Recalibration guidance:
+- Set `_REF_TAIL_S` from measurement, not subtraction. The two runs bracket
+  50–110 s at the reference volume; take more samples before fixing a value.
+- Leave `_REF_S_PER_STEP` at 13.02 — independently confirmed at 12.9.
+- `_VOLUME_EXP = 1.6` is still only validated by the 704×1280×189 ~46 s/step
+  observation. The 289-frame 720p smoke in this story is the first real test of
+  it at a third volume; capture `seconds_per_step` there too and check the
+  exponent before trusting the estimate at the new length.
 
 The constants in `gateway/server.py` were anchored on a single fully-measured
 832×480×189 job and the measured ~46 s/step at 704×1280×189. A 289-frame job is a 1.53× volume
