@@ -207,6 +207,67 @@ minutes before we invest in the conditioning maths or the prompt work.
 5. **There is no audio conditioning.** The source clip's audio is not consumed,
    so the generated prefix carries *invented* audio underneath recycled video.
 
+## Blind A/B result — prompt format (2026-07-27)
+
+Twelve V2V scenarios at 480p, 189 frames, 35 steps, 2 s conditioning. Each pair
+shared a source clip and seed; **only the prompt differed**. Arm assignment was
+balanced 6/6 left/right and shuffled; the reviewer scored blind and the key was
+not opened until all twelve were scored.
+
+**Structured (Gemma-upsampled JSON) won 10 of 11 decided scenarios. Prose won 1.
+One scenario failed in both arms.**
+
+```
+binomial two-tailed, 10-1 of 11 decided: p = 0.012
+```
+
+Threshold agreed in advance: 10-2 or better = real effect. Met.
+
+- **No side bias**: LEFT won 5, RIGHT won 6.
+- **By domain**: vehicle 0-3, manipulation 0-4, rigid body 0-1, lighting 0-1,
+  fluids 1-1. Structured swept everything but fluids.
+- **By confidence**: of 9 CLEAR calls, structured took 8. Both MARGINAL calls
+  went to structured.
+- **Every loser was judged unshippable.** Reject rate **12 of 24 renders (50%)**,
+  including one pair where both arms failed.
+
+### Failure taxonomy (from blind review, all scenes)
+
+| class | instances |
+|---|---|
+| object geometry / identity instability | 4, 6, 7, 12 |
+| matter appearing without cause | 3, 5, 8 |
+| object solidity lost | 2, 9 |
+| matter vanishing | 1, 10 |
+| latent object state not tracked | 4 |
+
+Nearly all originated in the **prose** arm. Consistent with Cosmos3-Nano scoring
+**50.2** on Physics-IQ V2V — these are model-level limits, not misconfiguration.
+
+### What actually won — and the caveat that matters
+
+The winning prompts were not better because they were *JSON*. They were better
+because they were **temporally decomposed**. Scenario 10's winner reads: *slows →
+thins to a thread → stops → drop clings to the rim → falls → splashes*. The prose
+arm was a single flat sentence with no sequencing.
+
+**The prose arm was therefore a weak stand-in for the production design.** The
+pipeline's real prompts are Gemini-authored 10-second scripts carrying three
+timestamped beats — which *is* temporal decomposition, delivered as prose. This
+round refutes feeding Cosmos terse single-sentence briefs. It does **not** settle
+beat-structured prose versus JSON.
+
+**Open, and the next thing to test:** Gemini beat-script prose vs Gemma JSON, same
+clips and seeds. That is the comparison that decides the production design.
+
+### Incidental finding: scenario 10
+
+The structured arm kept the vessel tilted rather than setting it down because its
+prompt said so (*"the robotic arm remains perfectly still... holding the jar
+steady"*). But it dropped liquid outside the mug despite the prompt specifying
+*"falls vertically into the center of the white mug"* — a compliance failure, not
+prompt-directed. Prompt wording drives **action choice**, distinct from physics.
+
 ## Definition of Done
 
 - [ ] `POST /generate` accepts a `video` file and runs V2V end-to-end
