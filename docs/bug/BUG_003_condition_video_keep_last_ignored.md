@@ -68,14 +68,20 @@ HTTP decode step.
 - [x] Root cause identified and recorded
 - [ ] `docs/api.md` states that `condition_video_keep` has no effect over HTTP
 - [ ] STORY_018 does **not** expose `condition_video_keep` as a gateway field
-- [ ] `docs/api.md` tells clients to trim source clips before upload if they want
-      to condition on a clip's tail
+- [ ] STORY_018 works around it **gateway-side** by trimming the upload to its
+      final N frames before forwarding, so callers post whole clips
+- [ ] `docs/api.md` documents the tail-trimming behaviour and why it exists
 - [ ] Re-check on the next engine image bump; if fixed upstream, promote to a
       story for exposing the field properly
 
 ## Notes
 
 Not worth patching locally — it lives in the upstream engine image, which this
-repo deliberately runs unmodified (CLAUDE.md §5). Trimming client-side is
-equivalent in effect and costs nothing. Recorded so that the next person to read
-`condition_video_keep` in the source does not assume it works.
+repo deliberately runs unmodified (CLAUDE.md §5). Trimming before the bytes are
+forwarded is equivalent in effect and costs a decode of ~49 frames.
+
+**This defect is directly on the critical path for EPIC_001.** The pipeline's
+whole use case is conditioning clip 2 on the *final* 2 seconds of clip 1, which
+is precisely what `condition_video_keep: "last"` was meant to do. STORY_018
+therefore does the trimming in the gateway rather than exposing the broken knob
+or pushing the work onto callers.

@@ -22,6 +22,13 @@ happens **next** instead of describing the opening frame all over again.
 
 ## Technical Notes
 
+**In pipeline terms**, the two inputs map cleanly onto the multi-clip workflow:
+the conditioning video is the tail of the *previous* clip (what has already
+happened) and the prose brief is the *next* script — `script2.txt` — describing
+what should happen next. The upsampler's job is to fuse them into one JSON
+prompt. It must not re-narrate the previous clip, or clip 2 spends its opening
+seconds replaying clip 1's ending.
+
 **The contract comes from the technical report**, line 2349 — NVIDIA's own V2V
 upsampler user message. Its instruction block is the spec:
 

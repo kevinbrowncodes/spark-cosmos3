@@ -3,21 +3,24 @@
 **Epic:** EPIC_001 — Continue an existing video clip
 **Depends on:** STORY_017
 
-As a pipeline operator, I want to say how many seconds of my source clip the
-model should study before it starts inventing, so that it has enough motion
-history to continue the action convincingly.
+As a pipeline operator rendering a multi-clip script, I want to hand the gateway
+the previous clip and say how many of its closing seconds should condition the
+next one, so that clip 2 inherits clip 1's motion instead of restarting from a
+frozen pose.
 
 ## Acceptance Criteria
 
 - [ ] `POST /generate` accepts `condition_seconds` (float, default `0.2` ≈ the engine's 5-frame default)
 - [ ] The gateway translates `condition_seconds` into `condition_frame_indexes_vision` and injects it into `extra_params`
 - [ ] `condition_seconds=2.0` produces `condition_frame_indexes_vision = "0,1,…,12"` (49 pixel frames)
+- [ ] **The gateway trims the uploaded clip to its final N frames before forwarding**, so conditioning comes from the *end* of the source clip
+- [ ] A full-length previous clip can be posted as-is — the client is not required to pre-trim
 - [ ] The gateway **rejects with 400** any request whose uploaded clip contains fewer real frames than the conditioning window requires
 - [ ] The gateway **rejects with 400** a source clip whose frame rate is not 24 fps, naming the actual rate
 - [ ] `condition_seconds` is rejected if it would consume ≥ `frames` (nothing left to generate)
-- [ ] The response reports `condition_frames` and `generated_frames` so clients can see the split
+- [ ] The response reports `condition_frames` and `generated_frames` so clients know how much of the output to discard when splicing
 - [ ] `condition_seconds` on the I2V path returns 400 — it is meaningless without video
-- [ ] `docs/api.md` documents the field, the 24 fps precondition, and the minimum-frames rule
+- [ ] `docs/api.md` documents the field, the tail-trimming behaviour, the 24 fps precondition, the minimum-frames rule, and the splice formula
 
 ## Technical Notes
 
@@ -41,6 +44,15 @@ Both the API layer and the pipeline layer accept a comma-separated string
 `_normalize_condition_frame_indexes_vision` at `pipeline_cosmos3.py:103` both
 split on commas), so `"0,1,2,…,12"` is safe to send. A JSON list also works.
 
+**The 2.000 s trap.** "2 seconds" at 24 fps is 48 frames, but the conditioning
+window quantises up to **49** (indexes `0..12` → `12·4+1`). A caller who
+pre-trims to exactly 2.000 s arrives one frame short and is rejected by the
+guard below — or, without that guard, silently conditions its final latent frame
+on a repeated frame. Posting the whole clip and letting the gateway trim avoids
+this by construction; it is the recommended path and the reason trimming lives
+here rather than in the client. If a caller does pre-trim, `docs/api.md` must
+tell them to cut **≥ 49 frames** (2.1 s is safe), never exactly 2.0 s.
+
 **Why the minimum-frames guard is the important part of this story.** The server
 decodes at most `max(index)·4+1` frames from the upload. If the clip is *shorter*
 than that, nothing errors: `_prepare_latents_v2v` pads the tensor by repeating
@@ -62,10 +74,27 @@ fps as slow motion, with a time-base discontinuity where the generated
 continuation begins. Rejecting is correct: silently producing a subtly wrong
 result is worse than making the client run one `ffmpeg -r 24`.
 
-**Do not expose `condition_video_keep`.** It does not work over HTTP — the
-server truncates to the first N frames at decode time, so the pipeline's "last"
-selects the last N of N. See BUG_003. Clients wanting the tail of a longer clip
-must trim before upload; say so in `docs/api.md`.
+**Tail trimming is the core of this story, not a nicety.** The pipeline's use
+case is clip chaining: clip 2 conditions on the *final* 2 seconds of clip 1. The
+engine's own knob for this (`condition_video_keep: "last"`) is dead over HTTP —
+the server truncates to the first N frames at decode time, so `"last"` selects
+the last N of N (BUG_003). The only way to condition on a clip's end is for the
+bytes we forward to *begin* with those frames.
+
+So the gateway re-encodes: decode the upload, keep the final
+`condition_pixel_frames`, and forward those as the `input_reference`. Clients
+post the previous clip whole and the contract stays impossible to get wrong —
+which is the entire reason this repo exists. Do **not** push trimming onto
+callers; a client that forgets would get a valid-looking render conditioned on
+the wrong end of its own footage, with nothing in the response to reveal it.
+
+Trimming is a decode + re-encode of ~49 frames, cheap next to a render measured
+in tens of minutes. Use PyAV. Preserve 24 fps and the source dimensions; the
+engine handles resize and centre-crop to the target size itself.
+
+**Do not add a `condition_from: "start" | "end"` parameter.** Every known caller
+wants the tail. Ship tail-only, document it, and add the switch if a second use
+case ever appears.
 
 **Extra params assembly.** `EXTRA_PARAMS` is currently a frozen JSON string
 constant in `server.py`. It now has to be built per-request on the V2V path.
@@ -77,11 +106,16 @@ string it does today.
 **Unit** (required) — `gateway/tests/test_condition_window.py`:
 - the translation table: 0.2 s→`[0,1]`, 1.0 s→`[0..6]`, 2.0 s→`[0..12]`, 3.0 s→`[0..18]`
 - `condition_frames` is reported as the quantised value (49), not the requested (48)
+- **tail trimming**: post a 189-frame clip with distinguishable frames and assert
+  the forwarded bytes decode to the *last* 49, not the first 49 — the assertion
+  this whole story turns on
+- a clip exactly `condition_pixel_frames` long is forwarded unchanged
 - a 30-frame clip with `condition_seconds=2.0` → 400
 - a 25 fps clip → 400 naming the rate
 - `condition_seconds` ≥ available frames → 400
 - `condition_seconds` with `image=` → 400
-- the I2V `extra_params` string is unchanged from the frozen constant
+- the I2V `extra_params` string is unchanged from the frozen constant, and the
+  I2V path performs no decode or re-encode
 
 **Contract** (required) — curl:
 - `condition_seconds=2.0` → response reports `condition_frames: 49`
@@ -90,9 +124,16 @@ string it does today.
   gateway's request log, per STORY_010)
 
 **Smoke** (required — conditioning changes what the engine denoises) — 832×480,
-`steps=35`, `frames=189`, `condition_seconds=2.0`, a 24 fps clip of ≥49 frames.
-Verify the first ~2 s reproduce the source and the continuation does **not**
-freeze. A frozen output is the signature of the padding failure above. ~26 min.
+`steps=35`, `frames=189`, `condition_seconds=2.0`, posting a **whole** 24 fps
+clip rather than a pre-trimmed one, so tail selection is exercised end to end.
+Verify: the output's first ~2 s reproduce the **end** of the source (not its
+beginning), and the continuation does **not** freeze — a frozen output is the
+signature of the padding failure above. ~15 min at this volume.
+
+Then the real thing: chain it. Render clip 1 from a still via I2V, feed clip 1
+whole into a second request with `condition_seconds=2.0`, splice
+`clip1 + clip2[49:]`, and confirm the seam carries motion through rather than
+stalling and restarting.
 
 ## Estimated Complexity
 

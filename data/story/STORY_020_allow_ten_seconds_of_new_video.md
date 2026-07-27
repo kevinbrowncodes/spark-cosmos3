@@ -58,9 +58,23 @@ training context (technical report Fig. 10, line 772). Roughly 13% headroom.
 is the tightest configuration in the epic; do not extend further without
 redoing this calculation.
 
-**The progress estimate needs recalibrating.** The constants in
-`gateway/server.py` were anchored on a single fully-measured 832×480×189 job and
-the measured ~46 s/step at 704×1280×189. A 289-frame job is a 1.53× volume
+**The progress estimate already over-predicts — measured during STORY_017.**
+The first V2V smoke run (832×480×189, 35 steps, sound on — exactly the reference
+volume, so `scale = 1`) completed in a reported `inference_time_s` of **558.6 s**.
+The gateway model predicts `35 · 13.02 + 423 ≈ 878 s` for that job: a **57%
+over-estimate**. Decomposing, either the denoise anchor holds and the tail is
+~103 s rather than 423 s, or the 13.02 s/step figure is high. The 423 s tail was
+derived by subtraction from a single 50-step job, so it is the more suspect
+constant.
+
+Resolving this needs `seconds_per_step` from `:8001/progress` captured *during*
+a run — the STORY_017 smoke poller only recorded gateway-side progress, so the
+decomposition is not yet possible. **Capture it on the next V2V run before
+refitting.** Do not simply scale the existing constants to fit one new point;
+denoise and tail need separating first.
+
+The constants in `gateway/server.py` were anchored on a single fully-measured
+832×480×189 job and the measured ~46 s/step at 704×1280×189. A 289-frame job is a 1.53× volume
 extrapolation along a curve with exponent 1.6 — the estimate is unlikely to hold.
 Predicted at 35 steps: denoise ~55 min, tail ~24 min, **~80 min total**. Capture
 the real numbers (`seconds_per_step` from `:8001/progress`, `inference_time_s`

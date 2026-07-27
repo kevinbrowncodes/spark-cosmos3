@@ -8,14 +8,14 @@ footage rather than inventing movement from a frozen frame.
 
 ## Acceptance Criteria
 
-- [ ] `POST /generate` accepts a `video` file field (MP4) in addition to the existing `image` field
-- [ ] Exactly one of `image` / `video` is required — supplying both returns **400**, supplying neither returns **400**
-- [ ] When `video` is supplied, the gateway forwards the bytes as `input_reference` with the correct media type and the engine runs the V2V path
-- [ ] When `image` is supplied, behaviour is **byte-for-byte unchanged** from today — existing pipeline clients need no modification
-- [ ] `frames` is validated to be of the form **4k+1**; anything else returns 400 with a message naming the nearest valid values
-- [ ] The `/generate` response and `/jobs/{id}` polls report `mode: "i2v" | "v2v"`
-- [ ] A 480p V2V generation completes end-to-end and the output visibly continues the source clip's motion
-- [ ] `docs/api.md` documents the `video` field and the mode-dispatch rule
+- [x] `POST /generate` accepts a `video` file field (MP4) in addition to the existing `image` field
+- [x] Exactly one of `image` / `video` is required — supplying both returns **400**, supplying neither returns **400**
+- [x] When `video` is supplied, the gateway forwards the bytes as `input_reference` with the correct media type and the engine runs the V2V path
+- [x] When `image` is supplied, behaviour is **byte-for-byte unchanged** from today — existing pipeline clients need no modification
+- [x] `frames` is validated to be of the form **4k+1**; anything else returns 400 with a message naming the nearest valid values
+- [x] The `/generate` response and `/jobs/{id}` polls report `mode: "i2v" | "v2v"`
+- [x] A 480p V2V generation completes end-to-end and the output visibly continues the source clip's motion
+- [x] `docs/api.md` documents the `video` field and the mode-dispatch rule
 
 ## Technical Notes
 

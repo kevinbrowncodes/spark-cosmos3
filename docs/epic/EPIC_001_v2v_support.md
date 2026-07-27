@@ -1,6 +1,6 @@
 # EPIC_001 — Continue an existing video clip
 
-**Status:** Planned
+**Status:** In progress — STORY_017 done, 018–020 planned
 **Stories:** STORY_017 → STORY_020
 **Related bugs:** BUG_003
 
@@ -9,13 +9,52 @@
 ## Goal
 
 Today the gateway can only start a video from a **still image** (I2V). Cosmos 3
-also supports **video-to-video (V2V)**: condition on the opening seconds of a
-real clip and generate a physically consistent continuation.
+also supports **video-to-video (V2V)**: condition on a few seconds of real
+footage and generate a physically consistent continuation.
 
 The target shape for this epic:
 
 > Hand the gateway **2 seconds** of source video and get back **10 seconds of
 > newly generated video** continuing it.
+
+### How the pipeline actually uses this — multi-clip scripts
+
+The consumer is `ogtv-studios/pipeline`, which renders a sequence of clips from
+a sequence of scripts (`script1.txt` → clip 1, `script2.txt` → clip 2, …).
+
+- **Clip 1 is unchanged.** The pipeline sends a **still image** and the gateway
+  runs I2V exactly as it does today. This epic must not disturb that path.
+- **Clip 2 onward is where V2V lands.** Today the seam between clips is carried
+  by a single frame — clip 2 starts from the *last frame* of clip 1. With V2V,
+  clip 2 instead conditions on the **last 2 seconds** of clip 1, so the model
+  inherits velocity, trajectory, and motion history rather than a frozen pose.
+
+Two consequences that shape the stories:
+
+**The conditioning window is the END of the source clip, not the beginning.**
+This is the opposite of what the engine does by default, and BUG_003 means the
+`condition_video_keep: "last"` knob that exists for exactly this purpose does
+not work over HTTP — the server truncates to the first N frames at decode time.
+The gateway therefore has to trim the tail itself before forwarding (STORY_018).
+This repo owns the request contract; a client that forgets to trim would get a
+silently wrong render, conditioned on the wrong end of its own footage.
+
+**The pipeline must discard the recycled prefix when concatenating.** Clip 2's
+first 49 frames are a VAE round-trip of clip 1's last 49 frames — the same 2
+seconds, slightly shifted in colour and detail. Concatenating naively would
+replay 2 seconds at every seam. The joining logic is:
+
+```
+final = clip1 + clip2[condition_frames:] + clip3[condition_frames:] + …
+```
+
+which is why `/generate` reports `condition_frames` and `generated_frames`
+(STORY_018). The splice itself is client-side work in `ogtv-studios/pipeline`,
+not gateway work.
+
+A useful side effect: because the recycled prefix is discarded anyway, *Known
+limitation #5* (invented audio under the recycled video) costs nothing in
+practice — those frames and their audio never reach the final cut.
 
 ## Why it is worth doing
 
@@ -140,12 +179,12 @@ This is the core insight of STORY_020.
 
 ## Stories
 
-| # | Story | Delivers |
-|---|---|---|
-| **017** | Continue an existing video clip instead of starting from a still | The `video` field, mode dispatch, forwarding, 4k+1 validation. Engine-default 5-frame conditioning, prose prompts only. Proves the path. |
-| **018** | Choose how much of the source clip the model looks at | `condition_seconds` → `condition_frame_indexes_vision`. Unlocks the 2-second target. |
-| **019** | Write prompts that continue a scene rather than describe a still | The V2V upsampler contract — continuation semantics, not still-frame description. |
-| **020** | Allow ten full seconds of newly generated video | Generated-frames duration accounting, the 289-frame configuration, estimate recalibration. |
+| # | Story | Delivers | Status |
+|---|---|---|---|
+| **017** | Continue an existing video clip instead of starting from a still | The `video` field, mode dispatch, forwarding, 4k+1 validation. Engine-default 5-frame conditioning, prose prompts only. Proves the path. | **Done** |
+| **018** | Choose how much of the source clip the model looks at | `condition_seconds` → `condition_frame_indexes_vision`. Unlocks the 2-second target. | Planned |
+| **019** | Write prompts that continue a scene rather than describe a still | The V2V upsampler contract — continuation semantics, not still-frame description. | Planned |
+| **020** | Allow ten full seconds of newly generated video | Generated-frames duration accounting, the 289-frame configuration, estimate recalibration. | Planned |
 
 Stories ship **in order, one at a time**, per CLAUDE.md §10.5. STORY_017 is
 deliberately a thin vertical slice: it de-risks the entire mode at 480p in ~26
