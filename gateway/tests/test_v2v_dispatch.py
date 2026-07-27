@@ -112,17 +112,18 @@ class TestFrameCountRule:
     """4k+1 — the VAE folds 4 pixel frames into 1 latent frame."""
 
     def test_valid_counts_accepted(self):
-        # 4k+1 *and* inside the vendored upsampler schema's 2s-10s duration
-        # range, which is validated separately and first.
-        for frames in (49, 121, 189, 237):
+        # 4k+1 *and* leaving a generated span inside the vendored schema's
+        # 2s-10s range. Since STORY_020 duration is measured over generated
+        # frames, so the default 5-frame window is subtracted first: 49 total
+        # would leave only 44 generated (1.8s) and is now correctly rejected.
+        for frames in (121, 189, 237):
             resp, _ = _post(_VIDEO, data={"frames": str(frames), "upsample": "false"})
             assert resp.status_code == 200, f"{frames} should be valid"
 
-    def test_289_frames_still_blocked_by_the_duration_ceiling(self):
-        # 289 is a valid 4k+1 count and is the epic's target, but 289/24 rounds
-        # to '12s', outside data/upsampler_schema.json's 2s-10s enum. STORY_020
-        # fixes this by measuring duration from *generated* frames. Until then
-        # the rejection is correct — this test marks the boundary.
+    def test_289_frames_needs_the_matching_conditioning_window(self):
+        # 289 is the epic's target, but only with condition_seconds=2.0:
+        # 289 - 49 = 240 generated = exactly 10s. With the default 5-frame
+        # window it leaves 284 generated (11.8s), still outside the schema.
         resp, _ = _post(_VIDEO, data={"frames": "289", "upsample": "false"})
         assert resp.status_code == 400
         assert "4k+1" not in resp.json()["detail"]

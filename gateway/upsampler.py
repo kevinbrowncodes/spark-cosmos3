@@ -196,27 +196,55 @@ def _image_block(image_bytes: bytes) -> dict:
 _ALLOWED_DURATIONS = frozenset(f"{s}s" for s in range(2, 11))  # '2s'..'10s'
 
 
-def _parse_size(size: str, num_frames: int, fps: int) -> tuple[str, str, str]:
+def tier_for_size(size: str) -> str | None:
+    """'832x480' → '480'. None if the size is not in RESOLUTION_RATIO_DICT."""
+    try:
+        w_str, h_str = size.lower().split("x")
+        w, h = int(w_str), int(h_str)
+    except (ValueError, AttributeError):
+        return None
+    for tier, aspects in RRD.items():
+        for dims in aspects.values():
+            if dims["W"] == w and dims["H"] == h:
+                return tier
+    return None
+
+
+def _parse_size(
+    size: str, num_frames: int, fps: int, condition_frames: int = 0
+) -> tuple[str, str, str]:
     """Reverse-lookup size string e.g. '720x1280' → (tier, aspect_ratio, duration_label).
 
     Returns ('720', '9,16', '7s') for size='720x1280', num_frames=189, fps=24.
     Raises ValueError (→ HTTP 400) if size is not in RRD or duration is out of schema range.
+
+    `condition_frames` is the V2V conditioning window. Duration describes the
+    **generated continuation**, not the whole output — NVIDIA's V2V contract does
+    the same (Physics-IQ conditions on 3 s, predicts 5 s, pins duration="0:05").
+    Left at 0 the I2V behaviour is unchanged: duration is measured over the total.
     """
     try:
         w_str, h_str = size.lower().split("x")
         w, h = int(w_str), int(h_str)
     except ValueError:
         raise ValueError(f"size must be WxH (e.g. '720x1280'), got: {size!r}")
+    generated_frames = num_frames - condition_frames
     for tier, aspects in RRD.items():
         for aspect, dims in aspects.items():
             if dims["W"] == w and dims["H"] == h:
-                duration = f"{int(num_frames / fps)}s"
+                duration = f"{int(generated_frames / fps)}s"
                 if duration not in _ALLOWED_DURATIONS:
                     _max_dur = max(_ALLOWED_DURATIONS, key=lambda s: int(s[:-1]))
+                    span = (
+                        f"{generated_frames} generated frames "
+                        f"({num_frames} total − {condition_frames} conditioning)"
+                        if condition_frames
+                        else f"num_frames={num_frames}"
+                    )
                     raise ValueError(
-                        f"num_frames={num_frames} at fps={fps} → duration '{duration}', "
+                        f"{span} at fps={fps} → duration '{duration}', "
                         f"which is outside the schema's allowed set ('2s'–{_max_dur!r}). "
-                        f"Maximum is {_max_dur} ({int(fps * int(_max_dur[:-1]))} frames at {fps} fps)."
+                        f"Maximum is {_max_dur} ({int(fps * int(_max_dur[:-1]))} generated frames at {fps} fps)."
                     )
                 return tier, aspect, duration
     supported = ", ".join(

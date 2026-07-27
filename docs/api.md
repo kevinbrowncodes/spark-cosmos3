@@ -21,7 +21,7 @@ Clients send only creative intent. The gateway handles everything else.
 | `video` | file | one of | conditioning clip (MP4) → **video-to-video** (continuation) |
 | `prompt` | string | required | prose brief; upsampler expands to structured JSON |
 | `size` | string | `720x1280` | `WxH`; must be in `RESOLUTION_RATIO_DICT`. 400 if unsupported. |
-| `frames` | int | `189` | frame count, clamped 5–300; 189 ≈ 7.9 s |
+| `frames` | int | `189` | frame count. Ceiling is **resolution-aware**: 400 at 256p/480p, 300 at 720p/768p |
 | `steps` | int | `35` | `35` (NVIDIA model-card reference) or `50` (paper eval quality). Any other value → 400. |
 | `sound` | bool | `true` | audio generation on/off |
 | `upsample` | bool | `true` | expand prompt via Opus before sending to engine |
@@ -138,9 +138,25 @@ Returns the upstream job JSON plus:
 
 These fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart).
 
-**HTTP 400** is returned (before any API tokens are spent) if: `size` is not in `RESOLUTION_RATIO_DICT`, duration exceeds `"10s"` (240 frames at 24 fps), `steps` is not 35 or 50, both or neither of `image`/`video` were supplied, or `video` was supplied with a `frames` count that is not 4k+1.
+**HTTP 400** is returned (before any API tokens are spent) if: `size` is not in `RESOLUTION_RATIO_DICT`, the **generated** span falls outside `'2s'`–`'10s'`, `steps` is not 35 or 50, both or neither of `image`/`video` were supplied, `video` was supplied with a `frames` count that is not 4k+1, or `condition_seconds` consumes the whole output.
 
 Note the duration ceiling is **NVIDIA's, not ours**: `data/upsampler_schema.json` (vendored) restricts `duration` to `'2s'`–`'10s'`, and `upsampler._ALLOWED_DURATIONS` mirrors it. Widening it would put an out-of-distribution value in the structured prompt.
+
+#### Duration is measured over the generated span, not the whole output
+
+On V2V, `duration` counts **`frames - condition_frames`**. This follows NVIDIA's own
+V2V contract — the Physics-IQ protocol conditions on 3 s, predicts 5 s, and pins
+`duration="0:05"`. It is also what makes a full 10 s of new video reachable inside
+the vendored `'2s'`–`'10s'` enum:
+
+| config | conditioning | generated | total | duration sent | where it fits |
+|---|---|---|---|---|---|
+| 2 s in → 10 s out | 49 (2.04 s) | 240 (**10.0 s**) | **289** | `'10s'` | 480p and 720p |
+| 3 s in → 10 s out | 73 (3.04 s) | 240 (**10.0 s**) | **313** | `'10s'` | **480p only** |
+
+Both totals are 4k+1. 313 exceeds the 300-frame 720p ceiling, so the longer
+conditioning window is a 480p-only option. On I2V nothing changes — duration is
+still measured over the total.
 
 | Method | Path | Notes |
 | GET | `/jobs/{id}` | upstream status with a **moving progress bar**: a gateway elapsed-time estimate (`progress_source: "estimate"`, `eta_s` = expected − elapsed) that climbs as the render runs, capped at 99; the log sidecar then pins it to 99 (`progress_source: "sidecar"`) once denoise finishes (the VAE/audio/encode tail), and it snaps to 100 on completion. Progress is `max(server, estimate)` so a future real server value would win |

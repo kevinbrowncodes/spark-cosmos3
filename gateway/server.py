@@ -78,16 +78,18 @@ _V2V_PROMPT_FRAMES = 5
 #   denoise = steps * REF_S_PER_STEP * (vol/REF_VOLUME)**VOLUME_EXP
 #   tail    = REF_TAIL_S * (vol/REF_VOLUME)              [VAE decode+audio+encode]
 #
-# Anchored on one fully-measured job (832x480x189, 50 steps): the sidecar
-# caught 13.02 s/step denoise and the engine reported 1073.8 s end-to-end, so
-# tail ≈ 1074 − 50·13.02 ≈ 423 s. VOLUME_EXP=1.6 then reproduces the measured
-# ~46 s/step at 704x1280x189, and the model lands 720p at ~55 min end-to-end —
-# inside the measured 50–57 min band. Easy to recalibrate: rerun a job and read
-# seconds_per_step from :8001/progress + inference_time_s from the final status.
+# Recalibrated 2026-07-27 from 24 measured renders at the reference volume
+# (832x480x189, 35 steps, sound on): median 526 s end-to-end, range 518–609 s.
+# The sidecar measured 12.9 s/step, confirming the 13.02 denoise anchor, which
+# leaves tail = 526 − 35·12.9 ≈ 74 s. The previous _REF_TAIL_S of 423 s was
+# never measured — it came from subtracting 50·13.02 from a single 50-step job's
+# 1073.8 s, and overstated the tail by 5.7x, making every ETA wildly pessimistic.
+# VOLUME_EXP=1.6 remains validated only by the ~46 s/step observation at
+# 704x1280x189; it is untested at a third volume.
 _REF_VOLUME = 832 * 480 * 189
 _REF_S_PER_STEP = 13.02
 _VOLUME_EXP = 1.6
-_REF_TAIL_S = 423.0
+_REF_TAIL_S = 74.0
 _DEFAULT_STEPS = 50  # used if the job's params were lost (gateway restart)
 _DEFAULT_FRAMES = 189
 
@@ -150,6 +152,19 @@ def _nearest_frame_counts(frames: int) -> tuple[int, int]:
     return lo, lo + _VAE_TEMPORAL_COMPRESSION
 
 
+# Per-resolution frame ceilings (technical report Fig. 10): 256p and 480p allow
+# up to 400 frames, 720p up to 300. The previous blanket min(300, …) applied the
+# 720p limit everywhere, which blocked 3 s of conditioning plus a full 10 s of new
+# video at 480p (313 frames) for no reason. 768p is unlisted; treat it like 720p.
+_FRAME_CEILINGS = {"256": 400, "480": 400, "720": 300, "768": 300}
+_FRAME_CEILING_FALLBACK = 300
+_FRAME_FLOOR = 5
+
+
+def _frame_ceiling(size: str) -> int:
+    return _FRAME_CEILINGS.get(upsampler.tier_for_size(size), _FRAME_CEILING_FALLBACK)
+
+
 @app.post("/generate")
 async def generate(
     image: UploadFile | None = File(None),
@@ -190,7 +205,25 @@ async def generate(
     elif condition_seconds <= 0:
         raise HTTPException(400, f"condition_seconds must be positive, got {condition_seconds}")
 
-    frames = max(5, min(300, frames))
+    # The conditioning window is pure arithmetic, so resolve it before validation:
+    # on the V2V path the duration check measures the *generated* span, which needs
+    # this number. The clip itself is not touched until later.
+    indexes: tuple[int, ...] = ()
+    condition_frames = 0
+    if mode == "v2v":
+        indexes, condition_frames = video_util.condition_window(condition_seconds, FPS)
+
+    frames = max(_FRAME_FLOOR, min(_frame_ceiling(size), frames))
+
+    # Before the duration check, so "nothing left to generate" beats a confusing
+    # complaint about a 0s duration.
+    if mode == "v2v" and condition_frames >= frames:
+        raise HTTPException(
+            400,
+            f"condition_seconds={condition_seconds} consumes {condition_frames} of the "
+            f"{frames} requested frames, leaving nothing to generate; lower "
+            f"condition_seconds or raise frames",
+        )
 
     # V2V only, deliberately: the same 4k+1 rule governs the I2V latent maths,
     # but no I2V request has ever been rejected for it and this story must not
@@ -209,7 +242,7 @@ async def generate(
     # Validate size + duration unconditionally (BUG-002: was only checked on
     # the upsampled path). Single source of truth: upsampler._parse_size.
     try:
-        upsampler._parse_size(size, frames, FPS)
+        upsampler._parse_size(size, frames, FPS, condition_frames)
     except ValueError as exc:
         raise HTTPException(400, str(exc))
 
@@ -220,18 +253,9 @@ async def generate(
     # the *end* of the clip — the pipeline chains clips, so clip 2 conditions on
     # clip 1's final seconds. See gateway/video.py for why this lives here and
     # not in the engine (BUG_003) or the client.
-    condition_frames = None
     generated_frames = None
     extra_params = EXTRA_PARAMS
     if mode == "v2v":
-        indexes, condition_frames = video_util.condition_window(condition_seconds, FPS)
-        if condition_frames >= frames:
-            raise HTTPException(
-                400,
-                f"condition_seconds={condition_seconds} consumes {condition_frames} of the "
-                f"{frames} requested frames, leaving nothing to generate; lower "
-                f"condition_seconds or raise frames",
-            )
         try:
             media_bytes, _source_frames, _ = video_util.prepare_tail(media_bytes, condition_frames)
         except video_util.ClipError as exc:
@@ -313,7 +337,7 @@ async def generate(
     # How the output splits. On v2v the first `condition_frames` frames are a VAE
     # round-trip of the source clip's tail — clients chaining clips discard them
     # and concatenate `clip[condition_frames:]`. Null on i2v: nothing to discard.
-    job["condition_frames"] = condition_frames
+    job["condition_frames"] = condition_frames if mode == "v2v" else None
     job["generated_frames"] = generated_frames
     job["prompt_source"] = prompt_source  # "upsampled" | "prose"
     # null when upsampled; otherwise why the gateway used the prose defaults:
@@ -329,7 +353,7 @@ async def generate(
             _JOB_META.pop(next(iter(_JOB_META)))
         _JOB_META[video_id] = {
             "mode": mode,
-            "condition_frames": condition_frames,
+            "condition_frames": job["condition_frames"],
             "generated_frames": generated_frames,
             "prompt_source": job["prompt_source"],
             "upsample_fallback_reason": job["upsample_fallback_reason"],
@@ -351,7 +375,7 @@ async def generate(
             seed=form["seed"],
             upsample=upsample,
             mode=mode,
-            condition_frames=condition_frames,
+            condition_frames=job["condition_frames"],
             image_filename=media.filename,
             image_media_type=media_media_type,
             upsampler_output=full_prompt if prompt_source == "upsampled" else None,
