@@ -17,7 +17,7 @@ into the footage I actually asked for.
 - [ ] At 480p, 3.0 s of conditioning plus a full 10 s of new video (313 frames) is accepted
 - [ ] The progress estimate is within ~10% of actual on a 289-frame job
 - [ ] `sound_duration` covers the full 289 frames (12.04 s), not just the generated span
-- [ ] A 289-frame 720p V2V job completes end-to-end
+- [ ] A 289-frame **480p** V2V job completes end-to-end (480p is the production resolution — output is upscaled to 1080p externally, so 720p is explicitly out of scope for this story)
 - [ ] `docs/api.md` records the generated-frames duration rule and the recalibrated timing table
 
 ## Technical Notes
@@ -52,12 +52,12 @@ both exact here, but the existing code truncates rather than rounds. Any
 `condition_seconds` that leaves a non-multiple of 24 will silently floor. Assert
 the intended value in tests rather than trusting the arithmetic.
 
-**Budget verification** at 704×1280, 73 latent frames, 44×80 grid patched by 2 →
-880 tokens per latent frame → **64,240 tokens** against the model's 74,000-token
-training context (technical report Fig. 10, line 772). Roughly 13% headroom.
-289 is also inside the engine's 300-frame 720p limit from the same figure. This
-is the tightest configuration in the epic; do not extend further without
-redoing this calculation.
+**Budget verification.** At 480p (832×480) the token cost is far below the
+model's 74,000-token training context, so there is no constraint to check —
+73 latent frames on a 52×30 grid patched by 2 is ~11,700 tokens for a 289-frame
+job. The tight case was 720p (64,240 tokens at 704×1280), which this story no
+longer targets; the figure is retained only so a future 720p story does not have
+to re-derive it.
 
 **The progress estimate over-predicts, and the tail constant is why — measured.**
 Two V2V runs at exactly the reference volume (832×480×189, 35 steps, sound on,
@@ -84,10 +84,10 @@ Recalibration guidance:
 - Set `_REF_TAIL_S` from measurement, not subtraction. The two runs bracket
   50–110 s at the reference volume; take more samples before fixing a value.
 - Leave `_REF_S_PER_STEP` at 13.02 — independently confirmed at 12.9.
-- `_VOLUME_EXP = 1.6` is still only validated by the 704×1280×189 ~46 s/step
-  observation. The 289-frame 720p smoke in this story is the first real test of
-  it at a third volume; capture `seconds_per_step` there too and check the
-  exponent before trusting the estimate at the new length.
+- `_VOLUME_EXP = 1.6` is only validated by the 704×1280×189 ~46 s/step
+  observation. Since this story now stays at 480p, the exponent is not exercised
+  at a second volume — leave it alone and note that it remains unvalidated for
+  any future 720p work.
 
 The constants in `gateway/server.py` were anchored on a single fully-measured
 832×480×189 job and the measured ~46 s/step at 704×1280×189. A 289-frame job is a 1.53× volume
@@ -102,9 +102,16 @@ including the conditioning prefix. Per EPIC_001 known limitation #5, that prefix
 audio is invented rather than taken from the source; splicing the original audio
 back is client-side work.
 
-**Cost gate.** An 80-minute 720p job is the most expensive single operation in
-this repo. Validate the frame arithmetic at 480p (~26 min) first, and check
-`free -h` shows ≥50 GiB before starting. Exit code 137 means OOM.
+**Cost gate.** At 480p a 289-frame job is ~13 min at 35 steps, ~18 min at 50 —
+cheap enough that the frame arithmetic can be validated by running it rather than
+by reasoning about it. Still check `free -h` before starting; exit code 137 is OOM.
+
+**Consider steps=50.** The gateway already accepts only 35 or 50, so no code
+change is needed to try it. 35 is the model-card reference; **50 is the config in
+Table 21 that NVIDIA's own Physics-IQ evaluation used**, and the failures
+motivating the conditioning-length round are physics failures. At 480p the
+difference is ~3 min per render. Worth folding into the comparative round as a
+second axis, or settling first so the round only varies one thing.
 
 **The frame clamp is currently resolution-blind.** `server.py` does
 `frames = max(5, min(300, frames))`, which applies the 720p ceiling everywhere.
@@ -128,7 +135,9 @@ scores **50.2** on Physics-IQ V2V (direct, no best-of-N reranking) — roughly h
 the physical fidelity of real footage — so some failure is expected. But NVIDIA's
 protocol conditions on **3 s**, not 2, and more motion history is exactly what
 constrains physics. Whether the extra second earns its cost is measurable, and
-480p is where it can be measured for free.
+480p is where it can be measured for free — and since 480p is the production
+resolution (output is upscaled externally to 1080p), there is no 720p ceiling to
+trade against: 3 s conditioning and a full 10 s of output both fit.
 
 ## Testing Plan
 
@@ -153,16 +162,16 @@ same source clips, same seeds, blinded and balanced left/right — with the only
 variable being `condition_seconds` **2.0 vs 3.0** at 313 frames. Score for
 state preservation and object solidity specifically, since those are the failure
 modes observed at 2 s. 24 renders, ~3.5 h. A null result keeps 2 s and settles the
-720p trade-off; a clear win for 3 s means 720p must choose between conditioning
-quality and a full 10 s of output.
+choice of default; a clear win for 3 s makes 313 frames the production config.
 
-**Smoke** (required — this is the story's entire point) — two runs:
-1. 832×480, `steps=35`, `frames=289`, `condition_seconds=2.0` — validates the
-   arithmetic cheaply (~26 min)
-2. 704×1280, `steps=35`, `frames=289`, `condition_seconds=2.0` — the real target
-   (~80 min). Record `seconds_per_step` and `inference_time_s`, refit the
-   estimate constants, and confirm the output is 289 frames of which the first
-   49 match the source.
+**Smoke** (required — this is the story's entire point) — at 480p only:
+1. `frames=289`, `condition_seconds=2.0` — the headline config: 2 s in, 10.0 s of
+   new video out. Confirm 289 frames returned, first 49 matching the source tail.
+2. `frames=313`, `condition_seconds=3.0` — proves the resolution-aware ceiling
+   works and that 3 s conditioning with a full 10 s of output is reachable at 480p.
+
+Record `seconds_per_step` from `:8001/progress` and `inference_time_s` on both,
+and refit `_REF_TAIL_S` from the measurements.
 
 Pre-flight for both: `free -h` ≥50 GiB, no active generation in
 `docker logs cosmos3-api --since 10m | tail`.
