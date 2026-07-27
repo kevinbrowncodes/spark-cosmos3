@@ -13,7 +13,8 @@ into the footage I actually asked for.
 - [ ] `frames=289` with `condition_seconds=2.0` is accepted and yields exactly 240 generated frames (10.0 s)
 - [ ] The I2V path's duration accounting is **unchanged** — total frames remains correct there
 - [ ] `data/upsampler_schema.json` is **not** modified; the `'2s'`–`'10s'` range still holds
-- [ ] `frames` above the engine's 300-frame 720p limit returns 400
+- [ ] The frame ceiling is **resolution-aware**: 400 frames at 256p/480p, 300 at 720p — `frames` above the ceiling for the requested size returns 400
+- [ ] At 480p, 3.0 s of conditioning plus a full 10 s of new video (313 frames) is accepted
 - [ ] The progress estimate is within ~10% of actual on a 289-frame job
 - [ ] `sound_duration` covers the full 289 frames (12.04 s), not just the generated span
 - [ ] A 289-frame 720p V2V job completes end-to-end
@@ -105,6 +106,30 @@ back is client-side work.
 this repo. Validate the frame arithmetic at 480p (~26 min) first, and check
 `free -h` shows ≥50 GiB before starting. Exit code 137 means OOM.
 
+**The frame clamp is currently resolution-blind.** `server.py` does
+`frames = max(5, min(300, frames))`, which applies the 720p ceiling everywhere.
+The report's resolution table (Fig. 10, line 772) gives **400 frames at 256p and
+480p, 300 at 720p**. That matters for conditioning length:
+
+| conditioning | + 10 s new | total | 720p (≤300) | 480p (≤400) |
+|---|---|---|---|---|
+| 2.0 s (49 fr) | 240 fr | **289** | fits | fits |
+| 3.0 s (73 fr) | 240 fr | **313** | **over by 13** | fits |
+
+So at 720p, 2 s of conditioning is forced if a full 10 s of new video is wanted —
+3 s would cap the continuation at 227 frames (9.46 s). At 480p there is no
+conflict and 313 (4·78+1) is a valid count. Make the clamp read the ceiling from
+the requested size rather than assuming 300.
+
+**Why conditioning length is in scope here.** During the EPIC_001 A/B, two
+scenarios failed on *state preservation*: dust established in the conditioning
+window vanished, and a car drove through a rockfall that was blocking it. Cosmos3-Nano
+scores **50.2** on Physics-IQ V2V (direct, no best-of-N reranking) — roughly half
+the physical fidelity of real footage — so some failure is expected. But NVIDIA's
+protocol conditions on **3 s**, not 2, and more motion history is exactly what
+constrains physics. Whether the extra second earns its cost is measurable, and
+480p is where it can be measured for free.
+
 ## Testing Plan
 
 **Unit** (required) — `gateway/tests/test_generated_duration.py`:
@@ -121,6 +146,15 @@ this repo. Validate the frame arithmetic at 480p (~26 min) first, and check
 - `upsampler_output` carries `duration: '10s'`
 - `GET /jobs/{id}` progress climbs monotonically and `eta_s` is sane at
   submission
+
+**Comparative round** (required — establishes whether conditioning length affects
+physical fidelity): 12 scenarios at 480p, same structure as the EPIC_001 A/B —
+same source clips, same seeds, blinded and balanced left/right — with the only
+variable being `condition_seconds` **2.0 vs 3.0** at 313 frames. Score for
+state preservation and object solidity specifically, since those are the failure
+modes observed at 2 s. 24 renders, ~3.5 h. A null result keeps 2 s and settles the
+720p trade-off; a clear win for 3 s means 720p must choose between conditioning
+quality and a full 10 s of output.
 
 **Smoke** (required — this is the story's entire point) — two runs:
 1. 832×480, `steps=35`, `frames=289`, `condition_seconds=2.0` — validates the
