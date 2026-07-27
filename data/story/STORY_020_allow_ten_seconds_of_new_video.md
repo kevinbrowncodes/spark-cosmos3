@@ -164,6 +164,37 @@ state preservation and object solidity specifically, since those are the failure
 modes observed at 2 s. 24 renders, ~3.5 h. A null result keeps 2 s and settles the
 choice of default; a clear win for 3 s makes 313 frames the production config.
 
+**Both arms use timestamped beat prose**, not the flat single sentences that lost
+the EPIC_001 A/B 10-1. Holding prompt format constant at the *better* format is
+what keeps conditioning length the only variable; flat prose would confound the
+test with a format already known to be weak. Format:
+
+```
+0:00-0:03   The car edges forward at walking pace, tyres crunching over loose
+            gravel as the front wheels ride up onto the scattered stones at the
+            near edge of the rockfall.
+
+0:03-0:07   The dust still hanging in the air thins as the car pushes through it,
+            drifting left across the windscreen and clearing to reveal the larger
+            boulders further up the road.
+
+0:07-0:10   The car slows to a stop short of the largest boulder, the suspension
+            settling forward and then rocking back as it comes to rest.
+```
+
+Four properties each beat script must have, derived from what beat flat prose:
+
+1. **Sequencing** — three ordered beats of 3-4 s with explicit M:SS boundaries,
+   matching the report's V2V constraint to "use only M:SS timing".
+2. **Causal mechanism** — describe *how*, not only *what* ("the front wheels ride
+   up onto the stones", "the suspension settling forward and then rocking back").
+3. **State continuity** — explicitly carry forward conditions established in the
+   conditioning window ("the dust **still hanging** in the air"). Three of the
+   A/B's failures were state not being conserved; naming it gives the model
+   something to preserve.
+4. **Audio intent in-band** — the prose path never populates `audio_description`,
+   so audio cues must live in the beat text ("tyres crunching over loose gravel").
+
 **Smoke** (required — this is the story's entire point) — at 480p only:
 1. `frames=289`, `condition_seconds=2.0` — the headline config: 2 s in, 10.0 s of
    new video out. Confirm 289 frames returned, first 49 matching the source tail.
