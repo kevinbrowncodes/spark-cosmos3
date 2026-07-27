@@ -1,6 +1,6 @@
 # EPIC_001 — Continue an existing video clip
 
-**Status:** In progress — STORY_017 and 018 done, 019–020 planned
+**Status:** In progress — 017 and 018 done; 019 code complete but blocked on a reachable reasoner; 020 planned
 **Stories:** STORY_017 → STORY_020
 **Related bugs:** BUG_003
 
@@ -183,7 +183,7 @@ This is the core insight of STORY_020.
 |---|---|---|---|
 | **017** | Continue an existing video clip instead of starting from a still | The `video` field, mode dispatch, forwarding, 4k+1 validation. Engine-default 5-frame conditioning, prose prompts only. Proves the path. | **Done** |
 | **018** | Choose how much of the source clip the model looks at | `condition_seconds` → `condition_frame_indexes_vision`. Unlocks the 2-second target. | **Done** |
-| **019** | Write prompts that continue a scene rather than describe a still | The V2V upsampler contract — continuation semantics, not still-frame description. | Planned |
+| **019** | Write prompts that continue a scene rather than describe a still | The V2V upsampler contract — continuation semantics, not still-frame description. | Code complete, blocked on a reasoner |
 | **020** | Allow ten full seconds of newly generated video | Generated-frames duration accounting, the 289-frame configuration, estimate recalibration. | Planned |
 
 Stories ship **in order, one at a time**, per CLAUDE.md §10.5. STORY_017 is

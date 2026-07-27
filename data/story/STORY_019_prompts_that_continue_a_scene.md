@@ -2,6 +2,7 @@
 
 **Epic:** EPIC_001 — Continue an existing video clip
 **Depends on:** STORY_017, STORY_018
+**Status:** Code complete, **blocked on a reachable reasoner** for final sign-off
 
 As a pipeline operator, I want the prompt upsampler to understand that my source
 clip is footage already in motion, so that the structured prompt describes what
@@ -9,22 +10,43 @@ happens **next** instead of describing the opening frame all over again.
 
 ## Acceptance Criteria
 
-- [ ] `upsample=true` works on the V2V path — the `"v2v_not_supported"` fallback from STORY_017 is removed
-- [ ] A V2V-specific intro + instruction block exists alongside the I2V one, selected by mode
+- [x] `upsample=true` works on the V2V path — the `"v2v_not_supported"` fallback from STORY_017 is removed
+- [x] A V2V-specific intro + instruction block exists alongside the I2V one, selected by mode
       *(amended before implementation: these live as constants in `gateway/upsampler.py`, mirroring
       `I2V_INTRO` / `I2V_IMAGE_NOTE`, not as a new `data/` file. `data/` holds artifacts pulled
       verbatim from cosmos-framework and marked "Do not hand-edit" in `data/SOURCES.md`, with a
       drift-checker script; there is no upstream V2V template to vendor, and the shared base
       template — the actual vendored artifact — is already there and is parameterised by
       `$intro` / `$image_note`.)*
-- [ ] The upsampler is given real motion context from the source clip, not a single frame
+- [x] The upsampler is given real motion context from the source clip, not a single frame
 - [ ] `scene_imagination` summarises the source clip's subjects, motion history, and final visible configuration
 - [ ] `temporal_caption` is the **future** timeline beginning where the source clip ends — it does not re-narrate the source
-- [ ] `duration` in the emitted JSON is the **generated** length, not the total clip length
+- [x] `duration` in the emitted JSON is the **generated** length, not the total clip length
 - [ ] `audio_description` covers the generated span only
 - [ ] The V2V template is selectable with both reasoners (`opus`, `aeon`), matching STORY_015
-- [ ] `upsampler_output` echoes the V2V structured prompt exactly, per the STORY_016 contract
-- [ ] `./scripts/sync_config.sh --check` stays clean (no `data/` change is expected — see the amended criterion above)
+- [x] `upsampler_output` echoes the V2V structured prompt exactly, per the STORY_016 contract
+- [x] `./scripts/sync_config.sh --check` stays clean (no `data/` change is expected — see the amended criterion above)
+
+## Blocker — no reasoner available (2026-07-27)
+
+Implementation and unit/contract tests are done and deployed. The four unchecked
+criteria all describe the *content of a real model response* and cannot be signed
+off until a reasoner answers:
+
+- **Opus** — the Anthropic API returns `invalid_request_error`: *"Your credit
+  balance is too low to access the Anthropic API."* The gateway handled it
+  correctly, falling back to prose and reporting the reason verbatim.
+- **AEON** — `192.168.1.33` pings, but nothing answers on `:8003`
+  (`/v1/models` and `/health` both time out). The service is not running on Spark 1.
+
+Verified without a live model, against the real 189-frame clip:
+trim to 49 frames -> 5 JPEG stills (152 KB) sampled from the trimmed window ->
+`duration '5s'` computed from 140 generated frames -> the V2V instruction block
+present in the assembled prompt.
+
+Remaining to sign off, once either reasoner is up: run the smoke, then read
+`upsampler_output` and confirm `temporal_caption` starts at the continuation
+rather than re-narrating the conditioning frames.
 
 ## Technical Notes
 
