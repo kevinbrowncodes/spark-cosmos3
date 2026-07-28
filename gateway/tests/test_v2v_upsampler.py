@@ -53,10 +53,18 @@ class TestTemplateSelection:
     def test_v2v_note_states_continuation_not_retelling(self):
         note = upsampler.V2V_VIDEO_NOTE
         assert "continuation, not a retelling" in note
-        # The ordering NVIDIA's contract mandates.
-        assert note.index("scene_imagination") < note.index("temporal_caption")
         assert note.index("temporal_caption") < note.index("audio_description")
         assert "Do NOT re-narrate" in note
+
+    def test_v2v_note_does_not_request_fields_outside_the_schema(self):
+        # The report's Appendix B.1 template has scene_imagination; the vendored
+        # cosmos-framework schema does not. Asking for it made Gemma emit a key
+        # the template forbids, which strict validation then rejected.
+        schema = (_REPO_ROOT / "data" / "upsampler_schema.json").read_text()
+        assert "scene_imagination" not in schema
+        note = upsampler.V2V_VIDEO_NOTE
+        assert "Write scene_imagination" not in note
+        assert "no scene_imagination field" in note  # explicitly warned against
 
 
 class TestDurationFromGeneratedFrames:
@@ -213,3 +221,58 @@ class TestGatewayWiring:
         assert resp.json()["prompt_source"] == "prose"
         assert resp.json()["upsample_fallback_reason"] == "invalid_json"
         assert captured["data"]["prompt"] == "the car pulls away"
+
+
+class TestFrameLabels:
+    """Ordering must be stated, not inferred from message position (STORY_019 fix)."""
+
+    def test_labels_name_position_and_timestamp(self):
+        labels = upsampler.frame_labels(5, 73, 24)
+        assert len(labels) == 5
+        assert labels[0].startswith("conditioning frame 1 of 5, t=0.00s")
+        assert "t=3.00s" in labels[-1]
+
+    def test_last_label_marks_the_continuation_boundary(self):
+        labels = upsampler.frame_labels(5, 73, 24)
+        assert "final frame before the continuation" in labels[-1]
+        assert not any("final frame" in l for l in labels[:-1])
+
+    def test_timestamps_are_monotonic(self):
+        times = [float(l.split("t=")[1].split("s")[0]) for l in upsampler.frame_labels(5, 97, 24)]
+        assert times == sorted(times)
+        assert times[-1] == pytest.approx(96 / 24)
+
+    def test_single_still_still_labelled(self):
+        assert len(upsampler.frame_labels(1, 49, 24)) == 1
+
+    def test_no_labels_for_zero_count(self):
+        assert upsampler.frame_labels(0, 49, 24) == []
+
+    def test_images_are_interleaved_with_their_labels(self):
+        blocks = upsampler._labelled_images([b"\xff\xd8a", b"\xff\xd8b"], ["one", "two"])
+        assert [b["type"] for b in blocks] == ["text", "image", "text", "image"]
+        assert blocks[0]["text"] == "one" and blocks[2]["text"] == "two"
+
+    def test_unlabelled_images_pass_through(self):
+        blocks = upsampler._labelled_images([b"\xff\xd8a"], None)
+        assert [b["type"] for b in blocks] == ["image"]
+
+    @pytest.mark.asyncio
+    async def test_v2v_sends_labels_and_i2v_does_not(self):
+        seen = {}
+
+        async def fake(user_text, images, gs, res, ar, dur, fps, labels=None):
+            seen["labels"] = labels
+            return _STRUCTURED, None, {"reasoner": "opus"}
+
+        for mode, cond, expect in (("v2v", 49, True), ("i2v", 0, False)):
+            with (
+                patch.dict(os.environ, {"ANTHROPIC_API_KEY": "t"}),
+                patch("upsampler._upsample_opus", new=fake),
+            ):
+                await upsampler.upsample(
+                    prompt="p", image_bytes=[b"\xff\xd8a", b"\xff\xd8b"], size="832x480",
+                    num_frames=189, fps=24, generate_sound=True, mode=mode,
+                    condition_frames=cond,
+                )
+            assert bool(seen["labels"]) is expect, f"{mode} label handling wrong"

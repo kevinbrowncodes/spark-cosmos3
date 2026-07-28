@@ -69,16 +69,18 @@ V2V_VIDEO_NOTE = (
     "natural-language request describes future/action intent — what happens NEXT.\n"
     "The video you are describing STARTS where the final attached frame ends. "
     "It is a continuation, not a retelling.\n"
-    "1. Write scene_imagination first, summarising the conditioning video's "
-    "state, subjects, motion history, and final visible configuration.\n"
-    "2. Write temporal_caption second as the future playback timeline that "
-    "FOLLOWS the conditioning video, preserving continuity with the observed "
-    "motion. Do NOT re-narrate the attached frames — the first moment you "
-    "describe is the moment after the last attached frame.\n"
-    "3. Write audio_description third, aligned with visible future events.\n"
+    "1. Ground subjects, background_setting, lighting and context in the "
+    "conditioning frames: their state at the final frame, and the direction and "
+    "speed of any motion already underway.\n"
+    "2. Write temporal_caption as the future playback timeline that FOLLOWS the "
+    "conditioning video, preserving continuity with the observed motion. Do NOT "
+    "re-narrate the attached frames — the first moment you describe is the "
+    "moment after the last attached frame.\n"
+    "3. Write audio_description aligned with visible future events.\n"
     "4. Preserve concrete facts from the conditioning frames: subject "
-    "appearance, setting, lighting, colours, and the direction and speed of "
-    "any motion already underway.\n"
+    "appearance, setting, lighting, colours, and motion already in progress.\n"
+    "5. Use ONLY the keys in the output template. Do not add keys — in "
+    "particular there is no scene_imagination field in this schema.\n"
 )
 
 
@@ -174,6 +176,16 @@ def _detect_media_type(data: bytes) -> str:
         if data[: len(magic)] == magic:
             return mime
     return "image/jpeg"  # safe fallback; Anthropic will reject if truly wrong
+
+
+def _labelled_images(images: list[bytes], labels: list[str] | None) -> list[dict]:
+    """Interleave each still with a caption naming its position and timestamp."""
+    out: list[dict] = []
+    for i, b in enumerate(images):
+        if labels and i < len(labels):
+            out.append({"type": "text", "text": labels[i]})
+        out.append(_image_block(b))
+    return out
 
 
 def _image_block(image_bytes: bytes) -> dict:
@@ -284,6 +296,28 @@ _SAMPLING_PARAMS = {"max_tokens": 8192}
 # Public entry point
 # ---------------------------------------------------------------------------
 
+def frame_labels(count: int, condition_frames: int, fps: int) -> list[str]:
+    """Per-still captions naming position and timestamp within the window.
+
+    Without these the reasoner has to infer temporal order from message position
+    alone. Stating it costs a handful of tokens and removes the guess — the whole
+    point of showing several frames is to convey motion, which is worthless if
+    their order is ambiguous. t=0 is the start of the conditioning window; the
+    last still sits at its end, which is where the continuation begins.
+    """
+    if count < 1:
+        return []
+    span = max(0, condition_frames - 1) / fps
+    if count == 1:
+        return [f"conditioning frame 1 of 1, t={span:.2f}s (final frame before the continuation)"]
+    out = []
+    for i in range(count):
+        t = span * i / (count - 1)
+        note = " (final frame before the continuation)" if i == count - 1 else ""
+        out.append(f"conditioning frame {i + 1} of {count}, t={t:.2f}s{note}")
+    return out
+
+
 async def upsample(
     prompt: str,
     image_bytes: bytes | list[bytes],
@@ -331,15 +365,17 @@ async def upsample(
     )
 
     images = image_bytes if isinstance(image_bytes, list) else [image_bytes]
+    # Only V2V shows multiple stills; a lone I2V frame needs no ordering caption.
+    labels = frame_labels(len(images), condition_frames, fps) if mode == "v2v" else []
 
     if reasoner == "aeon":
         return await _upsample_aeon(
             user_text, images, generate_sound,
-            resolution, aspect_ratio, duration, fps,
+            resolution, aspect_ratio, duration, fps, labels,
         )
     return await _upsample_opus(
         user_text, images, generate_sound,
-        resolution, aspect_ratio, duration, fps,
+        resolution, aspect_ratio, duration, fps, labels,
     )
 
 
@@ -355,6 +391,7 @@ async def _upsample_opus(
     aspect_ratio: str,
     duration: str,
     fps: int,
+    labels: list[str] | None = None,
 ) -> tuple[str | None, str | None, dict | None]:
     attempt = 0
     message = None
@@ -369,9 +406,11 @@ async def _upsample_opus(
                     {
                         "role": "user",
                         "content": [
-                            # Images first (framework order); on V2V these are
-                            # in temporal order, oldest to newest.
-                            *[_image_block(b) for b in images],
+                            # Images first (framework order), oldest to newest.
+                            # On V2V each is preceded by a caption naming its
+                            # position and timestamp so the order is stated
+                            # rather than inferred from message position.
+                            *_labelled_images(images, labels),
                             {"type": "text", "text": user_text},
                         ],
                     }
@@ -463,17 +502,19 @@ async def _upsample_aeon(
     aspect_ratio: str,
     duration: str,
     fps: int,
+    labels: list[str] | None = None,
 ) -> tuple[str | None, str | None, dict | None]:
-    image_parts = [
-        {
+    image_parts = []
+    for i, b in enumerate(images):
+        if labels and i < len(labels):
+            image_parts.append({"type": "text", "text": labels[i]})
+        image_parts.append({
             "type": "image_url",
             "image_url": {
                 "url": f"data:{_detect_media_type(b)};base64,"
                        f"{base64.standard_b64encode(b).decode('ascii')}"
             },
-        }
-        for b in images
-    ]
+        })
     payload = {
         "model": _AEON_MODEL,
         "max_tokens": 8192,
