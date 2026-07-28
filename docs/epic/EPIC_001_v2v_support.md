@@ -268,6 +268,47 @@ steady"*). But it dropped liquid outside the mug despite the prompt specifying
 *"falls vertically into the center of the white mug"* — a compliance failure, not
 prompt-directed. Prompt wording drives **action choice**, distinct from physics.
 
+## Blind A/B result — conditioning length (2026-07-28)
+
+Twelve scenarios, 480p, **50 steps**, blinded and balanced 6/6. Both arms produce
+exactly 240 generated frames (10.0 s of new video); the only variable is the
+conditioning window.
+
+    arm A: 289 frames = 49 conditioning (2.04 s) + 240 generated
+    arm B: 313 frames = 73 conditioning (3.04 s) + 240 generated
+
+**3 s conditioning won 8 of 10 decided. 2 s won 2. Two scenarios failed in both arms.**
+
+```
+binomial two-tailed, 8-2 of 10 decided: p = 0.109  -- does NOT clear the 0.05 bar
+```
+
+Not conclusive by the pre-agreed threshold. But **all four CLEAR calls went to
+3 s** (0.5^4 ~ 6% by chance), there was no side bias (5 LEFT / 5 RIGHT), and the
+direction was consistent across vehicle, manipulation, rigid-body and lighting.
+
+**Decision: adopt 3 s (313 frames).** The evidence leans that way, every confident
+judgement supports it, and being wrong costs 8% more render time — not worth
+another 9 GPU-hours to resolve at p<0.05.
+
+### Conditioning length is second-order; prompt format is the lever
+
+MARGINAL calls rose from **2 of 11** in the prompt-format round to **6 of 10**
+here. Prompt format produced obvious winners; conditioning length mostly produced
+close calls. Optimisation effort belongs in prompt structure.
+
+### Fluids fail regardless of configuration
+
+Scenarios 5 and 10 — both fluid tests — **failed in both arms**, at 50 steps, at
+both conditioning lengths. In the prompt-format round fluids were also the only
+category the losing arm ever won. Neither more steps nor more context fixes them;
+treat fluid-heavy beats as a known weak spot and plan on re-rolls.
+
+### Steps 35 -> 50 did not remove catastrophic failures
+
+Two double-failures here at 50 steps against one at 35 in the previous round.
+Small sample, but no evidence that steps is the lever either.
+
 ## Definition of Done
 
 - [ ] `POST /generate` accepts a `video` file and runs V2V end-to-end
