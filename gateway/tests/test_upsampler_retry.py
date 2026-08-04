@@ -21,11 +21,10 @@ import upsampler
 _FAKE_IMAGE = b"\xff\xd8" + b"\x00" * 10
 _VALID_SIZE = "720x1280"
 _VALID_FRAMES = 189
-_VALID_JSON = (
-    '```json\n{"subjects": [{"name": "t"}], "actions": [], "environment": {}, '
-    '"cinematography": {}, "resolution": {}, "aspect_ratio": "", '
-    '"duration": "", "fps": 24, "audio_description": ""}\n```'
-)
+# Schema-complete, as real Opus output is (72/72 valid in the job logs).
+# STORY_022 validates the full canonical key set on both reasoner paths,
+# so the previous minimal stub no longer represents a passing response.
+_VALID_JSON = '```json\n{"actions": [], "aesthetics": "x", "artistic_style": "x", "aspect_ratio": "x", "audio_description": "quiet room tone", "background_setting": "x", "cinematography": "x", "context": "x", "duration": "x", "fps": 24, "lighting": "x", "resolution": {}, "segments": [], "style_medium": "x", "subjects": [{"name": "t"}], "temporal_caption": "the scene continues", "text_and_signage_elements": [], "transitions": []}\n```'
 
 
 def _make_message(text=_VALID_JSON, stop_reason="end_turn"):

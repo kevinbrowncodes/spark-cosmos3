@@ -133,7 +133,11 @@ async def health():
     return {"gateway": "ok", "cosmos": upstream}
 
 
-_VALID_REASONERS = ("opus", "aeon")
+# gemma first: it is the default and the only one that works unattended here.
+# aeon was removed in STORY_022 after being unreachable throughout; opus is kept
+# selectable so it can be switched on later by setting ANTHROPIC_API_KEY.
+_VALID_REASONERS = ("gemma", "opus")
+_REMOVED_REASONERS = {"aeon": "removed in STORY_022; the endpoint was never reachable"}
 
 # The WAN VAE compresses 4 pixel frames into 1 latent frame, so a video's frame
 # count must be 4k+1 for the encoded conditioning latent to match the noise
@@ -176,9 +180,15 @@ async def generate(
     sound: bool = Form(True),
     seed: int | None = Form(None),
     upsample: bool = Form(True),
-    reasoner: str = Form("opus"),
+    reasoner: str = Form("gemma"),
     condition_seconds: float | None = Form(None),
 ):
+    if reasoner in _REMOVED_REASONERS:
+        raise HTTPException(
+            422,
+            f"reasoner {reasoner!r} was {_REMOVED_REASONERS[reasoner]}. "
+            f"Use one of {list(_VALID_REASONERS)}.",
+        )
     if reasoner not in _VALID_REASONERS:
         raise HTTPException(422, f"reasoner must be one of {list(_VALID_REASONERS)}, got {reasoner!r}")
 
@@ -301,8 +311,6 @@ async def generate(
         )
         if fallback_reason == "invalid_size":
             raise HTTPException(400, f"size {size!r} is not supported; see RESOLUTION_RATIO_DICT for valid sizes")
-        if fallback_reason == "aeon_unreachable":
-            raise HTTPException(503, f"AEON reasoner is not reachable at {upsampler.AEON_URL}; confirm the AEON service is running on Spark 1")
         if structured:
             full_prompt = structured
             prompt_source = "upsampled"

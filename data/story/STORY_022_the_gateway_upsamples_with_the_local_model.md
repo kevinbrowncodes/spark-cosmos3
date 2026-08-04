@@ -3,7 +3,7 @@
 **Epic:** EPIC_001 — Continue an existing video clip
 **Depends on:** STORY_019 (V2V upsampler contract), STORY_015 (reasoner selector)
 **Unblocks:** STORY_019 sign-off
-**Supersedes:** STORY_015 (selectable reasoner) — see Technical Notes
+**Narrows:** STORY_015 (selectable reasoner) — aeon removed, gemma added, opus retained as an option
 
 As a pipeline operator, I want the gateway to upsample prompts using the local
 Gemma model by default, so that `upsample=true` produces a structured prompt
@@ -12,9 +12,10 @@ to prose.
 
 ## Acceptance Criteria
 
-- [ ] Gemma is the **only** reasoner — a request with no `reasoner` field uses it
-- [ ] **`opus` and `aeon` are removed**: their code paths, the `anthropic` dependency, `AEON_URL`, and the Anthropic retry constants all go
-- [ ] `reasoner` is still accepted but only `"gemma"` is valid; `opus`/`aeon` return **422 naming the removal**, rather than being silently ignored
+- [ ] Gemma is the **default** — a request with no `reasoner` field uses it
+- [ ] **`aeon` is removed entirely**: its code path, `AEON_URL`, `_AEON_MODEL`, and the 503-on-unreachable branch
+- [ ] **`opus` is retained but never default** — selectable via `reasoner=opus`, still reports `no_api_key` when no key is set, so it can be switched on later without new work
+- [ ] `reasoner=aeon` returns **422 naming the removal**, rather than being silently ignored
 - [ ] The gateway reaches Ollama from inside its container (it currently binds loopback)
 - [ ] Retries cover **content** failures, not just HTTP errors — a 200 response carrying malformed JSON, a schema violation, or empty content is retried
 - [ ] Content retries are **immediate** (no 30 s backoff — there is no rate limit to back off from on a local model)
@@ -45,7 +46,8 @@ Opus needs credit the account does not have; AEON has been unreachable all week
 QUILL 10-1. Defaulting to a reasoner that cannot answer is precisely how the
 silent prose fallback happened.
 
-**This supersedes STORY_015, and satisfies its original motivation better.**
+**This narrows STORY_015 rather than replacing it.** The selector survives; only
+its options change.
 STORY_015 added the selector so an *uncensored local model* could be chosen "when
 content policies would otherwise block or degrade the rewrite" — a real concern
 for this project's subject matter. AEON was that escape hatch and it is down.
@@ -56,10 +58,14 @@ STORY_015 addressed is met; the mechanism it built is not needed.
 Per CLAUDE.md §10.2, STORY_015's prose stays frozen — this story supersedes it
 rather than editing it.
 
-**Deletion scope:** `_upsample_opus` (~111 lines), `_upsample_aeon` (~107 lines),
-the `anthropic` import and client, `_RETRYABLE_STATUS`, `_MAX_ATTEMPTS`,
-`_RETRY_DELAY`, `AEON_URL`, `_AEON_MODEL`, and `anthropic` from
-`gateway/Dockerfile`. Roughly 240 of 603 lines in `upsampler.py`.
+**Deletion scope: AEON only.** `_upsample_aeon` (~107 lines), `AEON_URL`,
+`_AEON_MODEL`, and the 503-on-unreachable branch in `server.py`. It has been
+unreachable all week and there is no route back to it.
+
+**Opus stays, deliberately.** It is retained as a non-default option so it can be
+switched on later by setting `ANTHROPIC_API_KEY` — no code change required. Its
+path, the `anthropic` dependency, and the HTTP retry constants remain. It costs
+~111 dormant lines to keep a door open that would otherwise need rebuilding.
 
 **Keep the `reasoner` field, do not drop it.** FastAPI ignores unknown form
 fields, so removing the parameter would make `reasoner=opus` *silently* inert —

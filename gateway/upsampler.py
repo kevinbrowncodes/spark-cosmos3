@@ -3,15 +3,17 @@
 Cosmos 3 was trained on structured JSON captions; NVIDIA's production stack
 converts user prompts into that format with an LLM upsampler before
 generation (technical report §6.3.2; template: Appendix B.1, I2V variant).
-This module implements that step with either the Anthropic API (Opus) or
-the local AEON vLLM service (Qwen3.6-27B uncensored), grounding on the seed
-image per the official template: "Treat the attached starting frame as
-definitive visual ground truth and the text as temporal/action intent."
+This module implements that step with the **local Gemma model over Ollama**
+by default, grounding on the conditioning media per the official template.
+Opus remains selectable via `reasoner="opus"` for when an API key is present.
 
-Failure of any kind returns None and the gateway falls back to the prose
-prompt path — upsampling can never block a render, except when the AEON
-reasoner is explicitly selected and is unreachable (the caller then 503s
-instead of silently degrading to prose).
+Gemma is the default because it is the only reasoner that works unattended on
+this box (STORY_022): Opus needs credit, and AEON was removed after being
+unreachable throughout. Defaulting to a reasoner that cannot answer is how every
+`upsample=true` request silently degraded to prose.
+
+Failure of any kind returns None and the gateway falls back to the prose prompt
+path — upsampling can never block a render.
 """
 
 import asyncio
@@ -137,8 +139,49 @@ def build_upsampler_prompt(
 # ---------------------------------------------------------------------------
 
 MODEL = os.environ.get("UPSAMPLER_MODEL", "claude-opus-4-8")
-AEON_URL = os.environ.get("AEON_URL", "http://192.168.1.33:8003")
-_AEON_MODEL = "aeon-ultimate"
+
+# Default reasoner. Local, free, no key. Reachable from the container via
+# host.docker.internal (see docker-compose.yml extra_hosts).
+GEMMA_URL = os.environ.get("GEMMA_URL", "http://host.docker.internal:11434")
+GEMMA_MODEL = os.environ.get("GEMMA_MODEL", "gemma4:26b")
+
+# Gemma fails with HTTP 200 carrying malformed JSON roughly 1 in 9 (measured over
+# a week of prompt generation). Every observed failure succeeded on the next
+# attempt, so these retries are IMMEDIATE — a local model has no rate limit to
+# back off from, unlike the Opus path below.
+_GEMMA_ATTEMPTS = 5
+_TIMEOUT_S = 900.0
+
+# The vendored schema's top-level keys. The template forbids adding or omitting
+# keys, and Gemma has emitted `scene_imagination` — which belongs to the report's
+# Appendix B.1 template, not this one. Checked in both directions.
+CANONICAL_KEYS = frozenset({
+    "actions", "aesthetics", "artistic_style", "aspect_ratio", "audio_description",
+    "background_setting", "cinematography", "context", "duration", "fps",
+    "lighting", "resolution", "segments", "style_medium", "subjects",
+    "temporal_caption", "text_and_signage_elements", "transitions",
+})
+
+
+def validate_structured(data: dict) -> None:
+    """Raise ValueError unless `data` is a well-formed structured prompt.
+
+    Stricter than the old `"subjects" in data` check, because Gemma's failures are
+    schema-shaped as well as syntax-shaped: it has added keys the template forbids
+    and, at low max_tokens, returned empty content with a populated `reasoning`
+    field. Both must be caught here so the caller can retry.
+    """
+    keys = set(data)
+    missing, extra = CANONICAL_KEYS - keys, keys - CANONICAL_KEYS
+    if missing:
+        raise ValueError(f"missing keys: {sorted(missing)}")
+    if extra:
+        raise ValueError(f"extra keys (template forbids): {sorted(extra)}")
+    if not isinstance(data.get("subjects"), list) or not data["subjects"]:
+        raise ValueError("subjects empty or not a list")
+    for field in ("temporal_caption", "audio_description"):
+        if not str(data.get(field) or "").strip():
+            raise ValueError(f"{field} empty")
 
 # Errors worth retrying: transient overload / rate-limit / server-side blip.
 # Everything else (400, 413, other 4xx) is deterministic — retrying won't help.
@@ -325,7 +368,7 @@ async def upsample(
     num_frames: int,
     fps: int,
     generate_sound: bool,
-    reasoner: str = "opus",
+    reasoner: str = "gemma",
     mode: str = "i2v",
     condition_frames: int = 0,
 ) -> tuple[str | None, str | None, dict | None]:
@@ -337,9 +380,10 @@ async def upsample(
     Returns (json_string, None, meta) on success, or (None, reason, None/meta)
     on failure — the caller falls back to the prose path and reports the reason
     to the client. Special reason values:
-      'invalid_size'     → caller should HTTP 400
-      'aeon_unreachable' → caller should HTTP 503 (not prose fallback)
-    All other reasons → prose fallback.
+      'invalid_size' → caller should HTTP 400
+    All other reasons → prose fallback. Unlike the removed AEON path, an
+    unreachable local reasoner does NOT 503 — it degrades to prose, because
+    Ollama being down should not fail a render the engine can still perform.
 
     meta always includes 'reasoner' and 'upsample_attempts'.
     """
@@ -368,12 +412,12 @@ async def upsample(
     # Only V2V shows multiple stills; a lone I2V frame needs no ordering caption.
     labels = frame_labels(len(images), condition_frames, fps) if mode == "v2v" else []
 
-    if reasoner == "aeon":
-        return await _upsample_aeon(
+    if reasoner == "opus":
+        return await _upsample_opus(
             user_text, images, generate_sound,
             resolution, aspect_ratio, duration, fps, labels,
         )
-    return await _upsample_opus(
+    return await _upsample_gemma(
         user_text, images, generate_sound,
         resolution, aspect_ratio, duration, fps, labels,
     )
@@ -473,8 +517,10 @@ async def _upsample_opus(
         print(f"upsampler: JSON parse failed ({exc}), falling back to prose", flush=True)
         return None, "upsampler_error", meta
 
-    if "subjects" not in data:
-        print("upsampler: missing expected fields, falling back to prose", flush=True)
+    try:
+        validate_structured(data)
+    except ValueError as exc:
+        print(f"upsampler: invalid structure ({exc}), falling back to prose", flush=True)
         return None, "invalid_json", meta
 
     _pin_output_params(data, resolution=resolution, aspect_ratio=aspect_ratio,
@@ -491,10 +537,11 @@ async def _upsample_opus(
 
 
 # ---------------------------------------------------------------------------
-# AEON path (local Qwen3.6-27B via OpenAI-compat vLLM on Spark 1 :8003)
+# Gemma path (local gemma4:26b via Ollama's OpenAI-compatible endpoint)
 # ---------------------------------------------------------------------------
 
-async def _upsample_aeon(
+
+async def _upsample_gemma(
     user_text: str,
     images: list[bytes],
     generate_sound: bool,
@@ -504,11 +551,18 @@ async def _upsample_aeon(
     fps: int,
     labels: list[str] | None = None,
 ) -> tuple[str | None, str | None, dict | None]:
-    image_parts = []
+    """Upsample with the local model. Retries cover CONTENT failures, not just HTTP.
+
+    The Opus path retries only on transport errors, which is right for an API that
+    returned valid JSON 72 of 72 times. Gemma instead fails with a 200 carrying
+    malformed JSON, so a parse or schema failure has to be retryable here or every
+    such response would fall silently through to prose.
+    """
+    parts: list[dict] = []
     for i, b in enumerate(images):
         if labels and i < len(labels):
-            image_parts.append({"type": "text", "text": labels[i]})
-        image_parts.append({
+            parts.append({"type": "text", "text": labels[i]})
+        parts.append({
             "type": "image_url",
             "image_url": {
                 "url": f"data:{_detect_media_type(b)};base64,"
@@ -516,88 +570,62 @@ async def _upsample_aeon(
             },
         })
     payload = {
-        "model": _AEON_MODEL,
+        "model": GEMMA_MODEL,
+        # Gemma is a thinking model: reasoning tokens are drawn from this budget.
+        # At 300 the content came back EMPTY while 447 went to a `reasoning`
+        # field, so keep this generous and treat empty content as a failure.
         "max_tokens": 8192,
-        "messages": [
-            {
-                "role": "user",
-                "content": [*image_parts, {"type": "text", "text": user_text}],
-            }
-        ],
+        "stream": False,
+        "messages": [{"role": "user", "content": [*parts, {"type": "text", "text": user_text}]}],
     }
-    url = f"{AEON_URL}/v1/chat/completions"
+    url = f"{GEMMA_URL}/v1/chat/completions"
 
-    attempt = 0
+    last_reason = "upsampler_error"
     text = ""
-    latency_s = 0.0
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
+    for attempt in range(1, _GEMMA_ATTEMPTS + 1):
         t0 = time.monotonic()
         try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
+            async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
                 resp = await client.post(url, json=payload)
             latency_s = round(time.monotonic() - t0, 2)
-
-            if resp.status_code in _RETRYABLE_STATUS:
-                if attempt < _MAX_ATTEMPTS:
-                    print(
-                        f"upsampler aeon: attempt {attempt}/{_MAX_ATTEMPTS} failed "
-                        f"(HTTP {resp.status_code}), retrying in {_RETRY_DELAY:.0f}s",
-                        flush=True,
-                    )
-                    await asyncio.sleep(_RETRY_DELAY)
-                    continue
-                reason = f"api_error: HTTP {resp.status_code}"
-                print(f"upsampler: AEON falling back to prose — {reason}", flush=True)
-                return None, reason, {"reasoner": "aeon", "upsample_attempts": attempt}
-
             resp.raise_for_status()
-            text = resp.json()["choices"][0]["message"]["content"]
-            break  # success — exit retry loop
-
-        except httpx.ConnectError:
-            # Service is down on the remote Spark — don't retry, let the caller 503.
-            print(f"upsampler: AEON unreachable at {AEON_URL}", flush=True)
-            return None, "aeon_unreachable", {"reasoner": "aeon", "upsample_attempts": attempt}
-        except httpx.TimeoutException as exc:
-            if attempt == _MAX_ATTEMPTS:
-                reason = f"api_error: {type(exc).__name__}: {exc}"
-                print(f"upsampler: AEON falling back to prose — {reason}", flush=True)
-                return None, reason, {"reasoner": "aeon", "upsample_attempts": attempt}
+            text = resp.json()["choices"][0]["message"].get("content") or ""
+            if not text.strip():
+                raise ValueError("empty content (thinking tokens consumed the budget?)")
+            data = _extract_json(text)
+            validate_structured(data)
+        except httpx.ConnectError as exc:
+            print(f"upsampler: gemma unreachable at {GEMMA_URL} — {exc}", flush=True)
+            return None, "gemma_unreachable", {"reasoner": "gemma", "upsample_attempts": attempt}
+        except Exception as exc:
+            last_reason = (
+                "invalid_json" if isinstance(exc, (ValueError, json.JSONDecodeError))
+                else f"api_error: {type(exc).__name__}: {exc}"
+            )
             print(
-                f"upsampler aeon: attempt {attempt}/{_MAX_ATTEMPTS} timed out, "
-                f"retrying in {_RETRY_DELAY:.0f}s",
+                f"upsampler gemma: attempt {attempt}/{_GEMMA_ATTEMPTS} — "
+                f"{type(exc).__name__}: {str(exc)[:80]}",
                 flush=True,
             )
-            await asyncio.sleep(_RETRY_DELAY)
-        except Exception as exc:
-            reason = f"api_error: {type(exc).__name__}: {exc}"
-            print(f"upsampler: AEON falling back to prose — {reason}", flush=True)
-            return None, reason, {"reasoner": "aeon", "upsample_attempts": attempt}
+            continue  # immediate retry: no rate limit to back off from
 
-    meta = {
-        "reasoner": "aeon",
-        "upsample_attempts": attempt,
-        "model": _AEON_MODEL,
-        "endpoint": AEON_URL,
-        "prompt_sent": user_text,
-        "raw_response": text,
-        "latency_s": latency_s,
-    }
+        _pin_output_params(data, resolution=resolution, aspect_ratio=aspect_ratio,
+                           duration=duration, fps=fps)
+        if not generate_sound:
+            data["audio_description"] = ""
+        meta = {
+            "reasoner": "gemma",
+            "upsample_attempts": attempt,
+            "model": GEMMA_MODEL,
+            "endpoint": GEMMA_URL,
+            "prompt_sent": user_text,
+            "raw_response": text,
+            "latency_s": latency_s,
+        }
+        print(f"upsampler: gemma ok — {latency_s}s, {attempt} attempt(s)", flush=True)
+        return json.dumps(data, ensure_ascii=True), None, meta
 
-    try:
-        data = _extract_json(text)
-    except (ValueError, json.JSONDecodeError) as exc:
-        print(f"upsampler: AEON JSON parse failed ({exc}), falling back to prose", flush=True)
-        return None, "upsampler_error", meta
-
-    if "subjects" not in data:
-        print("upsampler: AEON missing expected fields, falling back to prose", flush=True)
-        return None, "invalid_json", meta
-
-    _pin_output_params(data, resolution=resolution, aspect_ratio=aspect_ratio,
-                       duration=duration, fps=fps)
-    if not generate_sound:
-        data["audio_description"] = ""
-
-    print(f"upsampler: AEON ok — {latency_s}s, {attempt} attempt(s)", flush=True)
-    return json.dumps(data, ensure_ascii=True), None, meta
+    print(f"upsampler: gemma exhausted {_GEMMA_ATTEMPTS} attempts, falling back to prose",
+          flush=True)
+    return None, last_reason, {"reasoner": "gemma", "upsample_attempts": _GEMMA_ATTEMPTS,
+                               "raw_response": text}

@@ -22,11 +22,9 @@ import upsampler
 _FAKE_IMAGE = b"\xff\xd8" + b"\x00" * 10
 _VALID_SIZE = "720x1280"
 _VALID_FRAMES = 189
-_VALID_JSON = (
-    '```json\n{"subjects": [{"name": "t"}], "actions": [], "environment": {}, '
-    '"cinematography": {}, "resolution": {}, "aspect_ratio": "", '
-    '"duration": "", "fps": 24, "audio_description": ""}\n```'
-)
+# Schema-complete: STORY_022 validates the full canonical key set on both
+# reasoner paths, so the old minimal stub no longer represents a pass.
+_VALID_JSON = '```json\n{"actions": [], "aesthetics": "x", "artistic_style": "x", "aspect_ratio": "x", "audio_description": "room tone", "background_setting": "x", "cinematography": "x", "context": "x", "duration": "x", "fps": 24, "lighting": "x", "resolution": {}, "segments": [], "style_medium": "x", "subjects": [{"name": "t"}], "temporal_caption": "the scene continues", "text_and_signage_elements": [], "transitions": []}\n```'
 
 
 def _make_opus_message(text=_VALID_JSON):
@@ -62,19 +60,27 @@ def _run_upsample(**kwargs):
 
 
 class TestReasonerRouting:
-    def test_default_reasoner_calls_opus(self):
-        mock_client = MagicMock()
-        mock_client.with_options.return_value = mock_client
-        mock_client.messages.create = AsyncMock(return_value=_make_opus_message())
+    def test_default_reasoner_is_gemma_not_opus(self):
+        """STORY_022 flipped the default. Opus must not be reached implicitly."""
+        called = {}
 
-        with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "test"}):
-            with patch("upsampler._get_client", return_value=mock_client):
-                with patch("httpx.AsyncClient") as mock_httpx:
-                    result, reason, meta = _run_upsample()
+        async def fake_gemma(*a, **kw):
+            called["gemma"] = True
+            return "{}", None, {"reasoner": "gemma"}
 
-        assert result is not None
-        assert meta["reasoner"] == "opus"
-        mock_httpx.assert_not_called()
+        async def fake_opus(*a, **kw):
+            called["opus"] = True
+            return "{}", None, {"reasoner": "opus"}
+
+        with (
+            patch("upsampler._upsample_gemma", new=fake_gemma),
+            patch("upsampler._upsample_opus", new=fake_opus),
+        ):
+            _, _, meta = _run_upsample()
+
+        assert called.get("gemma") is True
+        assert "opus" not in called, "opus must never be reached without being asked for"
+        assert meta["reasoner"] == "gemma"
 
     def test_reasoner_opus_explicit_calls_opus(self):
         mock_client = MagicMock()
@@ -90,61 +96,6 @@ class TestReasonerRouting:
         assert meta["reasoner"] == "opus"
         mock_httpx.assert_not_called()
 
-    def test_reasoner_aeon_calls_aeon_not_opus(self):
-        mock_resp = _make_aeon_response()
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
-        mock_http_client.__aexit__ = AsyncMock(return_value=False)
-        mock_http_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch("upsampler._get_client") as mock_get_client:
-            with patch("httpx.AsyncClient", return_value=mock_http_client):
-                result, reason, meta = _run_upsample(reasoner="aeon")
-
-        assert result is not None
-        assert meta["reasoner"] == "aeon"
-        mock_get_client.assert_not_called()
-
-    def test_aeon_meta_contains_endpoint(self):
-        mock_resp = _make_aeon_response()
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
-        mock_http_client.__aexit__ = AsyncMock(return_value=False)
-        mock_http_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_http_client):
-            result, reason, meta = _run_upsample(reasoner="aeon")
-
-        assert "endpoint" in meta
-        assert "8003" in meta["endpoint"]
-
-    def test_aeon_unreachable_returns_aeon_unreachable_reason(self):
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
-        mock_http_client.__aexit__ = AsyncMock(return_value=False)
-        mock_http_client.post = AsyncMock(side_effect=httpx.ConnectError("refused"))
-
-        with patch("httpx.AsyncClient", return_value=mock_http_client):
-            result, reason, meta = _run_upsample(reasoner="aeon")
-
-        assert result is None
-        assert reason == "aeon_unreachable"
-        assert meta["reasoner"] == "aeon"
-
-    def test_aeon_provenance_contains_reasoner(self):
-        mock_resp = _make_aeon_response()
-        mock_http_client = AsyncMock()
-        mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
-        mock_http_client.__aexit__ = AsyncMock(return_value=False)
-        mock_http_client.post = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_http_client):
-            result, reason, meta = _run_upsample(reasoner="aeon")
-
-        assert meta["reasoner"] == "aeon"
-        assert meta["upsample_attempts"] == 1
-
-
 class TestInvalidReasonerRejectedByServer:
     def test_bad_reasoner_returns_422(self):
         from fastapi.testclient import TestClient
@@ -159,20 +110,3 @@ class TestInvalidReasonerRejectedByServer:
         assert resp.status_code == 422
         assert "badvalue" in resp.text
 
-    def test_aeon_unreachable_returns_503(self):
-        from fastapi.testclient import TestClient
-        import server
-
-        client = TestClient(server.app)
-
-        async def fake_upsample(**kwargs):
-            return None, "aeon_unreachable", {"reasoner": "aeon", "upsample_attempts": 1}
-
-        with patch("upsampler.upsample", side_effect=fake_upsample):
-            resp = client.post(
-                "/generate",
-                data={"prompt": "test", "reasoner": "aeon"},
-                files={"image": ("t.png", _FAKE_IMAGE, "image/png")},
-            )
-
-        assert resp.status_code == 503

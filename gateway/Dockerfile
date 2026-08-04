@@ -3,6 +3,8 @@ FROM python:3.12-slim
 ARG GIT_SHA=unknown
 LABEL git.sha=$GIT_SHA
 
+# anthropic is retained though gemma is the default reasoner: opus stays
+# selectable so it can be enabled later with an API key and no code change.
 # av: decode/trim the V2V conditioning clip (STORY_018). The wheel bundles
 # ffmpeg, so no system packages are needed — and it is the same library the
 # engine decodes with, so our frame counts match its own exactly.

@@ -24,7 +24,8 @@ Clients send only creative intent. The gateway handles everything else.
 | `frames` | int | `189` | frame count. Ceiling is **resolution-aware**: 400 at 256p/480p, 300 at 720p/768p |
 | `steps` | int | `35` | `35` (NVIDIA model-card reference) or `50` (paper eval quality). Any other value → 400. |
 | `sound` | bool | `true` | audio generation on/off |
-| `upsample` | bool | `true` | expand prompt via Opus before sending to engine |
+| `upsample` | bool | `true` | expand prompt into structured JSON before sending to the engine |
+| `reasoner` | string | `gemma` | which model upsamples. `gemma` (local, default) or `opus` (needs `ANTHROPIC_API_KEY`). `aeon` was removed and returns 400. |
 | `seed` | int | (random) | optional; gateway generates if omitted |
 | `condition_seconds` | float | `0.2` | **V2V only.** How much of the clip's *end* conditions the render. 400 on the `image` path. |
 
@@ -132,8 +133,31 @@ final = clip1 + clip2[condition_frames:] + clip3[condition_frames:] + …
 Returns the upstream job JSON plus:
 - `mode: "i2v" | "v2v"` — which conditioning path ran, derived from the file field supplied
 - `condition_frames` / `generated_frames` — how the output splits. On V2V the first `condition_frames` are the recycled source tail; drop them when chaining. Both `null` on I2V (nothing to discard)
-- `prompt_source: "upsampled" | "prose"` — whether Opus expanded the prompt
-- `upsample_fallback_reason` — `null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`
+- `prompt_source: "upsampled" | "prose"` — whether the reasoner expanded the prompt
+- `upsample_fallback_reason` — `null` when upsampled; otherwise `"disabled_by_request"`, `"no_api_key"` (opus without a key), `"gemma_unreachable"`, `"refusal"`, `"invalid_json"`, or `"api_error: …"`
+
+#### Reasoners
+
+**`gemma` is the default** — `gemma4:26b` served locally by Ollama. No API key, no
+remote dependency. It won the prompt-format comparison 10-1 over flat prose
+(`docs/experiments.md`, QUILL).
+
+It fails with a 200 carrying malformed JSON roughly 1 in 9, so the gateway retries
+**up to 5 times, immediately** — a local model has no rate limit to back off from.
+Retries cover *content* failures too: a parse error, a schema violation, or empty
+content (Gemma is a thinking model, and at a low token budget the reasoning field
+can consume it all). Every response is validated against the vendored schema's
+full key set in both directions before use.
+
+**`opus`** stays selectable for when `ANTHROPIC_API_KEY` is set. Without a key it
+reports `no_api_key` and the caller falls back to prose.
+
+**`aeon` was removed** — the endpoint was never reachable. Requesting it returns
+400 naming the removal rather than being silently ignored.
+
+If the reasoner is unreachable the gateway falls back to prose rather than
+failing the request: the engine can still render, and a silent 503 would be worse
+than a weaker prompt.
 - `upsampler_output` — the exact structured prompt string the upsampler produced and the gateway sent to the engine, for provenance/viewing. `null` on the prose path (`prompt_source: "prose"`), including when an attempted upsample failed and fell back — the field means "what the upsampler produced," not "what ran"
 
 These fields are also merged into `/jobs/{id}` polls (best-effort; in-memory, lost on gateway restart).

@@ -86,6 +86,7 @@ class TestDurationFromGeneratedFrames:
             await upsampler.upsample(
                 prompt="p", image_bytes=b"x", size="832x480", num_frames=num_frames,
                 fps=24, generate_sound=True, mode=mode, condition_frames=condition_frames,
+                reasoner="opus",
             )
         return seen["text"]
 
@@ -273,6 +274,6 @@ class TestFrameLabels:
                 await upsampler.upsample(
                     prompt="p", image_bytes=[b"\xff\xd8a", b"\xff\xd8b"], size="832x480",
                     num_frames=189, fps=24, generate_sound=True, mode=mode,
-                    condition_frames=cond,
+                    condition_frames=cond, reasoner="opus",
                 )
             assert bool(seen["labels"]) is expect, f"{mode} label handling wrong"

@@ -67,6 +67,10 @@ services:
     image: spark-cosmos3-gateway:latest
     container_name: cosmos3-gateway
     restart: unless-stopped
+    # Ollama serves the default gemma reasoner from the HOST (STORY_022). The
+    # container cannot reach 127.0.0.1:11434 without this mapping.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8002:8002"
     volumes:
@@ -75,8 +79,11 @@ services:
     environment:
       - COSMOS_URL=http://cosmos3:8000
       - SIDECAR_URL=http://progress:8001
-      # Prompt upsampler (Anthropic API). Empty key = upsampling silently
-      # disabled, prose path used. Model override: UPSAMPLER_MODEL.
+      # Default reasoner: local gemma over Ollama on the host. No key needed.
+      - GEMMA_URL=${GEMMA_URL:-http://host.docker.internal:11434}
+      - GEMMA_MODEL=${GEMMA_MODEL:-gemma4:26b}
+      # opus stays selectable via reasoner=opus; set a key to enable it.
+      # Without one it reports no_api_key and the caller falls back to prose.
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
     depends_on:
       - cosmos3
