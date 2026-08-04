@@ -14,7 +14,9 @@ to prose.
 - [ ] `gemma` is a valid reasoner and is the **default** — a request with no `reasoner` field uses it
 - [ ] `opus` and `aeon` remain selectable, unchanged in behaviour
 - [ ] The gateway reaches Ollama from inside its container (it currently binds loopback)
-- [ ] Gemma's ~11% JSON-syntax failure rate is absorbed by retries, matching the STORY_014 treatment of the Opus path
+- [ ] Retries cover **content** failures, not just HTTP errors — a 200 response carrying malformed JSON, a schema violation, or empty content is retried
+- [ ] Content retries are **immediate** (no 30 s backoff — there is no rate limit to back off from on a local model)
+- [ ] Up to **5 attempts** on the gemma path; the existing 3-attempt / 30 s HTTP policy is unchanged for opus and aeon
 - [ ] A malformed response after all retries falls back to prose and reports `upsample_fallback_reason`, never a 500
 - [ ] The V2V path sends **labelled stills** from the conditioning window, exactly as STORY_019 specifies
 - [ ] `upsampler_output` echoes the structured prompt per the STORY_016 contract
@@ -48,7 +50,33 @@ parts, same retry and fallback structure. Differences:
 - **thinking tokens count against `max_tokens`.** At 300 the content came back
   *empty* while 447 tokens went to a separate `reasoning` field. Keep 8192 and
   treat empty content as a retryable failure, not a success.
-- retries are load-bearing, not defensive: measured ~11% JSON-syntax failure
+**The existing retry does not cover Gemma's failure mode.** `_RETRYABLE_STATUS`
+is `{429, 500, 502, 503, 529}` — transport errors only. A parse failure returns
+immediately:
+
+```python
+except (ValueError, json.JSONDecodeError) as exc:
+    return None, "upsampler_error", meta      # no retry
+```
+
+That is correct for Opus, which returned valid JSON **72 of 72** times in the job
+logs. It is wrong for Gemma, which fails with **HTTP 200 carrying malformed
+JSON** — roughly 1 in 9, observed repeatedly across prompt generation. Under
+today's logic every one of those would fall straight through to prose.
+
+So the gemma path needs retries on:
+
+| failure | seen in practice |
+|---|---|
+| `JSONDecodeError` | yes, ~11% |
+| extra/missing keys (e.g. `scene_imagination`) | yes |
+| empty `content` with a populated `reasoning` field | yes, at low `max_tokens` |
+| empty `temporal_caption` or `audio_description` | guard against |
+
+**Immediate retry, not backed off.** The 30 s delay exists for API rate limits
+(STORY_014). A local model has none, and a malformed generation is resolved by
+sampling again — measured: every observed failure succeeded on the next attempt.
+5 attempts, no delay.
 
 **Networking.** Ollama binds `127.0.0.1:11434` and `OLLAMA_HOST` is unset, so the
 gateway container cannot reach it. Needs `OLLAMA_HOST=0.0.0.0:11434` plus
