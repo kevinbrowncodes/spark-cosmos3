@@ -541,6 +541,29 @@ async def _upsample_opus(
 # ---------------------------------------------------------------------------
 
 
+async def _unload_gemma() -> None:
+    """Evict the model from memory. Best-effort — never raises.
+
+    Ollama holds a model resident for 5 minutes after the last request by
+    default. On unified memory that is not idle capacity: a resident 26B sits in
+    the same 121 GiB the engine needs, and has already paged it to swap mid-run.
+    Upsampling happens once per clip and denoising takes ~40 min, so there is
+    nothing to gain from keeping it warm.
+
+    Sent to the native endpoint, not the OpenAI-compatible one: `keep_alive` is
+    not part of the OpenAI schema, and a compat layer is free to drop unknown
+    fields silently — which would look identical to success while leaving the
+    model loaded.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            await client.post(f"{GEMMA_URL}/api/generate",
+                              json={"model": GEMMA_MODEL, "keep_alive": 0})
+    except Exception as exc:  # never fail the request over cleanup
+        print(f"upsampler: gemma unload failed ({type(exc).__name__}) — "
+              f"model may stay resident ~5 min", flush=True)
+
+
 async def _upsample_gemma(
     user_text: str,
     images: list[bytes],
@@ -582,50 +605,59 @@ async def _upsample_gemma(
 
     last_reason = "upsampler_error"
     text = ""
-    for attempt in range(1, _GEMMA_ATTEMPTS + 1):
-        t0 = time.monotonic()
-        try:
-            async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
-                resp = await client.post(url, json=payload)
-            latency_s = round(time.monotonic() - t0, 2)
-            resp.raise_for_status()
-            text = resp.json()["choices"][0]["message"].get("content") or ""
-            if not text.strip():
-                raise ValueError("empty content (thinking tokens consumed the budget?)")
-            data = _extract_json(text)
-            validate_structured(data)
-        except httpx.ConnectError as exc:
-            print(f"upsampler: gemma unreachable at {GEMMA_URL} — {exc}", flush=True)
-            return None, "gemma_unreachable", {"reasoner": "gemma", "upsample_attempts": attempt}
-        except Exception as exc:
-            last_reason = (
-                "invalid_json" if isinstance(exc, (ValueError, json.JSONDecodeError))
-                else f"api_error: {type(exc).__name__}: {exc}"
-            )
-            print(
-                f"upsampler gemma: attempt {attempt}/{_GEMMA_ATTEMPTS} — "
-                f"{type(exc).__name__}: {str(exc)[:80]}",
-                flush=True,
-            )
-            continue  # immediate retry: no rate limit to back off from
+    contacted = False  # skip the unload call if we never reached Ollama at all
+    try:
+        for attempt in range(1, _GEMMA_ATTEMPTS + 1):
+            t0 = time.monotonic()
+            try:
+                async with httpx.AsyncClient(timeout=_TIMEOUT_S) as client:
+                    resp = await client.post(url, json=payload)
+                contacted = True
+                latency_s = round(time.monotonic() - t0, 2)
+                resp.raise_for_status()
+                text = resp.json()["choices"][0]["message"].get("content") or ""
+                if not text.strip():
+                    raise ValueError("empty content (thinking tokens consumed the budget?)")
+                data = _extract_json(text)
+                validate_structured(data)
+            except httpx.ConnectError as exc:
+                print(f"upsampler: gemma unreachable at {GEMMA_URL} — {exc}", flush=True)
+                return None, "gemma_unreachable", {"reasoner": "gemma",
+                                                   "upsample_attempts": attempt}
+            except Exception as exc:
+                last_reason = (
+                    "invalid_json" if isinstance(exc, (ValueError, json.JSONDecodeError))
+                    else f"api_error: {type(exc).__name__}: {exc}"
+                )
+                print(
+                    f"upsampler gemma: attempt {attempt}/{_GEMMA_ATTEMPTS} — "
+                    f"{type(exc).__name__}: {str(exc)[:80]}",
+                    flush=True,
+                )
+                continue  # immediate retry: no rate limit to back off from
 
-        _pin_output_params(data, resolution=resolution, aspect_ratio=aspect_ratio,
-                           duration=duration, fps=fps)
-        if not generate_sound:
-            data["audio_description"] = ""
-        meta = {
-            "reasoner": "gemma",
-            "upsample_attempts": attempt,
-            "model": GEMMA_MODEL,
-            "endpoint": GEMMA_URL,
-            "prompt_sent": user_text,
-            "raw_response": text,
-            "latency_s": latency_s,
-        }
-        print(f"upsampler: gemma ok — {latency_s}s, {attempt} attempt(s)", flush=True)
-        return json.dumps(data, ensure_ascii=True), None, meta
+            _pin_output_params(data, resolution=resolution, aspect_ratio=aspect_ratio,
+                               duration=duration, fps=fps)
+            if not generate_sound:
+                data["audio_description"] = ""
+            meta = {
+                "reasoner": "gemma",
+                "upsample_attempts": attempt,
+                "model": GEMMA_MODEL,
+                "endpoint": GEMMA_URL,
+                "prompt_sent": user_text,
+                "raw_response": text,
+                "latency_s": latency_s,
+            }
+            print(f"upsampler: gemma ok — {latency_s}s, {attempt} attempt(s)", flush=True)
+            return json.dumps(data, ensure_ascii=True), None, meta
 
-    print(f"upsampler: gemma exhausted {_GEMMA_ATTEMPTS} attempts, falling back to prose",
-          flush=True)
-    return None, last_reason, {"reasoner": "gemma", "upsample_attempts": _GEMMA_ATTEMPTS,
-                               "raw_response": text}
+        print(f"upsampler: gemma exhausted {_GEMMA_ATTEMPTS} attempts, falling back to prose",
+              flush=True)
+        return None, last_reason, {"reasoner": "gemma", "upsample_attempts": _GEMMA_ATTEMPTS,
+                                   "raw_response": text}
+    finally:
+        # After the loop, not between attempts: a retry would otherwise pay a full
+        # reload of a 26B model to fix what is usually a JSON formatting slip.
+        if contacted:
+            await _unload_gemma()

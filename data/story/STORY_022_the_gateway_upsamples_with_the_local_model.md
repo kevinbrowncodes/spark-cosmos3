@@ -12,20 +12,20 @@ to prose.
 
 ## Acceptance Criteria
 
-- [ ] Gemma is the **default** — a request with no `reasoner` field uses it
-- [ ] **`aeon` is removed entirely**: its code path, `AEON_URL`, `_AEON_MODEL`, and the 503-on-unreachable branch
-- [ ] **`opus` is retained but never default** — selectable via `reasoner=opus`, still reports `no_api_key` when no key is set, so it can be switched on later without new work
-- [ ] `reasoner=aeon` returns **422 naming the removal**, rather than being silently ignored
+- [x] Gemma is the **default** — a request with no `reasoner` field uses it
+- [x] **`aeon` is removed entirely**: its code path, `AEON_URL`, `_AEON_MODEL`, and the 503-on-unreachable branch
+- [x] **`opus` is retained but never default** — selectable via `reasoner=opus`, still reports `no_api_key` when no key is set, so it can be switched on later without new work
+- [x] `reasoner=aeon` returns **422 naming the removal**, rather than being silently ignored
 - [ ] The gateway reaches Ollama from inside its container (it currently binds loopback)
-- [ ] Retries cover **content** failures, not just HTTP errors — a 200 response carrying malformed JSON, a schema violation, or empty content is retried
-- [ ] Content retries are **immediate** (no 30 s backoff — there is no rate limit to back off from on a local model)
-- [ ] Up to **5 attempts** on the gemma path; the existing 3-attempt / 30 s HTTP policy is unchanged for opus and aeon
-- [ ] A malformed response after all retries falls back to prose and reports `upsample_fallback_reason`, never a 500
-- [ ] The V2V path sends **labelled stills** from the conditioning window, exactly as STORY_019 specifies
-- [ ] `upsampler_output` echoes the structured prompt per the STORY_016 contract
-- [ ] Output is validated against the canonical 18-key set before use — no extra keys, no missing keys, non-empty `temporal_caption` and `audio_description`
-- [ ] Gemma is **not left resident** after upsampling (see Technical Notes — this has already cost a scheduling abort and paged the engine to swap)
-- [ ] `docs/api.md` documents the default and the reasoner options
+- [x] Retries cover **content** failures, not just HTTP errors — a 200 response carrying malformed JSON, a schema violation, or empty content is retried
+- [x] Content retries are **immediate** (no 30 s backoff — there is no rate limit to back off from on a local model)
+- [x] Up to **5 attempts** on the gemma path; the existing 3-attempt / 30 s HTTP policy is unchanged for opus and aeon
+- [x] A malformed response after all retries falls back to prose and reports `upsample_fallback_reason`, never a 500
+- [x] The V2V path sends **labelled stills** from the conditioning window, exactly as STORY_019 specifies
+- [x] `upsampler_output` echoes the structured prompt per the STORY_016 contract
+- [x] Output is validated against the canonical 18-key set before use — no extra keys, no missing keys, non-empty `temporal_caption` and `audio_description`
+- [x] Gemma is **not left resident** after upsampling (see Technical Notes — this has already cost a scheduling abort and paged the engine to swap)
+- [x] `docs/api.md` documents the default and the reasoner options
 
 ## Technical Notes
 

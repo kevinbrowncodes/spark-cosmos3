@@ -149,6 +149,17 @@ content (Gemma is a thinking model, and at a low token budget the reasoning fiel
 can consume it all). Every response is validated against the vendored schema's
 full key set in both directions before use.
 
+The gateway **evicts the model after every upsample** (`POST /api/generate` with
+`keep_alive: 0`). Ollama otherwise holds it resident for 5 minutes, and on unified
+memory that is not spare capacity — a resident 26B sits in the same 121 GiB the
+engine needs and has paged it to swap mid-run. Eviction happens after the retry
+loop, not between attempts, so a retry doesn't pay a full reload to fix a JSON
+formatting slip. A failed eviction is logged, never fatal.
+
+⚠️ Ollama must be reachable from inside the container. It binds loopback by
+default; set `OLLAMA_HOST=0.0.0.0:11434` via a systemd drop-in, or every request
+falls back to prose with `gemma_unreachable`.
+
 **`opus`** stays selectable for when `ANTHROPIC_API_KEY` is set. Without a key it
 reports `no_api_key` and the caller falls back to prose.
 

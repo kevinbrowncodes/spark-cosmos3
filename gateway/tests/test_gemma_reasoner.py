@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 _REPO_ROOT = Path(__file__).parents[2]
@@ -49,12 +50,21 @@ def _gemma_reply(content: str) -> MagicMock:
     return r
 
 
-def _client_returning(*responses):
-    """An httpx.AsyncClient stub yielding the given responses in order."""
+def _client_returning(*responses, unload_raises=False):
+    """An httpx.AsyncClient stub yielding the given responses in order.
+
+    Unload calls hit a different endpoint and are tracked separately, so `n`
+    stays a count of upsample attempts alone.
+    """
     seq = list(responses)
-    calls = {"n": 0}
+    calls = {"n": 0, "unloads": 0}
 
     async def post(url, **kw):
+        if "/api/generate" in url:
+            calls["unloads"] += 1
+            if unload_raises:
+                raise httpx.ConnectError("ollama went away")
+            return _gemma_reply("")
         calls["n"] += 1
         return seq[min(calls["n"] - 1, len(seq) - 1)]
 
@@ -144,6 +154,54 @@ class TestContentRetries:
         assert out is None and reason == "invalid_json"
         assert calls["n"] == upsampler._GEMMA_ATTEMPTS
         assert meta["upsample_attempts"] == upsampler._GEMMA_ATTEMPTS
+
+
+class TestUnload:
+    """A resident 26B shares the engine's 121 GiB and has paged it to swap."""
+
+    async def _run(self, cm):
+        with patch("httpx.AsyncClient", return_value=cm):
+            return await upsampler.upsample(
+                prompt="p", image_bytes=b"\xff\xd8x", size="832x480", num_frames=241,
+                fps=24, generate_sound=True,
+            )
+
+    @pytest.mark.asyncio
+    async def test_model_is_evicted_after_a_successful_upsample(self):
+        cm, calls = _client_returning(_gemma_reply(json.dumps(_valid_structured())))
+        _, reason, _ = await self._run(cm)
+        assert reason is None
+        assert calls["unloads"] == 1
+
+    @pytest.mark.asyncio
+    async def test_model_is_evicted_after_exhausted_retries(self):
+        cm, calls = _client_returning(_gemma_reply("{broken"))
+        await self._run(cm)
+        assert calls["n"] == upsampler._GEMMA_ATTEMPTS
+        assert calls["unloads"] == 1, "failure must not leave the model resident"
+
+    @pytest.mark.asyncio
+    async def test_retries_do_not_each_pay_a_reload(self):
+        good = json.dumps(_valid_structured())
+        cm, calls = _client_returning(_gemma_reply("{broken"), _gemma_reply(good))
+        await self._run(cm)
+        assert calls["n"] == 2 and calls["unloads"] == 1
+
+    @pytest.mark.asyncio
+    async def test_no_unload_attempt_when_ollama_was_never_reached(self):
+        cm, calls = _client_returning()
+        cm.__aenter__.return_value.post = AsyncMock(
+            side_effect=httpx.ConnectError("refused"))
+        _, reason, _ = await self._run(cm)
+        assert reason == "gemma_unreachable"
+        assert calls["unloads"] == 0
+
+    @pytest.mark.asyncio
+    async def test_a_failed_unload_does_not_fail_the_request(self):
+        cm, _ = _client_returning(_gemma_reply(json.dumps(_valid_structured())),
+                                  unload_raises=True)
+        out, reason, _ = await self._run(cm)
+        assert out and reason is None
 
 
 class TestReasonerSelection:
