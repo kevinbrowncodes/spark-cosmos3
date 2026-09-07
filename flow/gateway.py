@@ -10,6 +10,9 @@
 #              _meta_by_job
 #   STORY_025  a finished clip is cached the moment a poll reports done
 #              (vLLM-omni forgets jobs on restart), not on first view
+#   STORY_026  Extend: a video reference goes as `video=` + condition_seconds,
+#              reference_kinds gains "video", and the recycled 73-frame prefix
+#              is trimmed off the cached clip (raw kept in flow-outputs-raw/)
 """Reference gateway for spark-cosmos3 (NVIDIA Cosmos 3 Nano behind the
 cosmos3-gateway on :8002).
 
@@ -39,7 +42,10 @@ Mapping (see spark-cosmos3/docs/api.md and docs/responses.md):
 from __future__ import annotations
 
 import json
+import logging
 import mimetypes
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -60,6 +66,7 @@ DEFAULT_LENGTH = 8
 # 2026-07-28): gateway condition_window(3.0, 24) → 73 pixel frames.
 CONDITION_SECONDS = 3.0
 CONDITION_FRAMES = 73
+log = logging.getLogger("flow")
 STATUS = {"queued": "queued", "in_progress": "running", "completed": "done", "failed": "failed", "cancelled": "failed", "error": "failed"}
 
 
@@ -87,6 +94,38 @@ def frames_for(length_s: float, reference_kind: str) -> int:
     """
     new = round(float(length_s) * FPS)
     return snap4k1(CONDITION_FRAMES + new if reference_kind == "video" else new)
+
+
+def has_audio(path: Path) -> bool:
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        return False
+    proc = subprocess.run([ffprobe, "-v", "error", "-select_streams", "a", "-show_entries", "stream=codec_type", "-of", "csv=p=0", str(path)], capture_output=True, timeout=60)
+    return b"audio" in proc.stdout
+
+
+def trim_prefix(raw: Path, out: Path, condition_frames: int, fps: int = FPS) -> Path | None:
+    """Frame-accurate cut: drop the first `condition_frames` frames of video and
+    the matching seconds of audio (STORY_026). Re-encodes — `-ss` with stream
+    copy snaps to keyframes. Returns `out`, or None (nothing written) on failure."""
+    ffmpeg = shutil.which("ffmpeg")
+    if not ffmpeg:
+        log.error("ffmpeg not found; cannot trim %s", raw.name)
+        return None
+    tmp = out.with_suffix(".part")          # .part is not a media suffix, so never listed
+    argv = [ffmpeg, "-y", "-loglevel", "error", "-i", str(raw),
+            "-vf", f"select='gte(n,{condition_frames})',setpts=PTS-STARTPTS"]
+    if has_audio(raw):
+        argv += ["-af", f"atrim=start={condition_frames / fps:.7f},asetpts=PTS-STARTPTS", "-c:a", "aac"]
+    argv += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+             "-movflags", "+faststart", "-f", "mp4", str(tmp)]
+    proc = subprocess.run(argv, capture_output=True, timeout=900)
+    if proc.returncode != 0 or not tmp.is_file():
+        log.error("trim failed for %s: %s", raw.name, proc.stderr.decode(errors="replace")[:400])
+        tmp.unlink(missing_ok=True)
+        return None
+    tmp.replace(out)
+    return out
 
 
 def _parse_size(size: str | None) -> tuple[int | None, int | None]:
@@ -137,7 +176,7 @@ class Cosmos3Gateway(FlowGateway):
                     }
                 ],
                 "reference": "required",  # the engine dispatches on the media it receives; there is no T2V path
-                "reference_kinds": ["image"],
+                "reference_kinds": ["image", "video"],  # a video reference = Extend (STORY_026)
                 "progress": "percent",
                 "strings": {
                     "footer": (
@@ -149,12 +188,12 @@ class Cosmos3Gateway(FlowGateway):
         )
 
     def generate(self, req: GenerateRequest) -> Job:
-        image = self.store.path(req.reference_id or "")
-        if image is None:
+        ref = self.store.path(req.reference_id or "")
+        if ref is None:
             raise UpstreamError(f"reference {req.reference_id!r} not found", 404)
-        kind = kind_of(image)
-        if kind != "image":
-            raise UpstreamError("the reference must be an image; extending a clip is not available yet", 422)
+        kind = kind_of(ref)
+        if kind not in ("image", "video"):
+            raise UpstreamError("the reference must be an image (generate) or a video (extend)", 422)
         v = req.values
         form = {
             "prompt": req.prompt,
@@ -165,7 +204,12 @@ class Cosmos3Gateway(FlowGateway):
             "upsample": "true" if v["upsample"] else "false",
             "reasoner": v["reasoner"],
         }
-        files = {"image": (image.name, image.read_bytes(), mimetypes.guess_type(image.name)[0] or "image/png")}
+        # The engine dispatches on the media it receives: image → I2V, video →
+        # V2V. Extend conditions on the clip's last 3 s (gateway trims the tail).
+        if kind == "video":
+            form["condition_seconds"] = str(CONDITION_SECONDS)
+        fallback = "video/mp4" if kind == "video" else "image/png"
+        files = {kind: (ref.name, ref.read_bytes(), mimetypes.guess_type(ref.name)[0] or fallback)}
         try:
             resp = self.client.post("/generate", data=form, files=files)
         except httpx.HTTPError as e:
@@ -173,7 +217,12 @@ class Cosmos3Gateway(FlowGateway):
         if resp.status_code >= 400:
             raise UpstreamError(f"cosmos3 gateway: {resp.text[:400]}", 502 if resp.status_code >= 500 else 422)
         job = resp.json()
-        self._meta_by_job[job["id"]] = {"size": job.get("size") or v["size"], "length": float(v["length"])}
+        self._meta_by_job[job["id"]] = {
+            "size": job.get("size") or v["size"],
+            "length": float(v["length"]),
+            # V2V only (null on I2V): how many leading frames are recycled source.
+            "condition_frames": job.get("condition_frames"),
+        }
         return self._to_job(job)
 
     def job(self, job_id: str) -> Job | None:
@@ -199,7 +248,31 @@ class Cosmos3Gateway(FlowGateway):
         behind and `media_path` retries lazily on first view.
         """
         target = self.store.roots["out"] / f"{job_id}.mp4"
-        return target if target.is_file() else self._fetch_output(target.name)
+        if target.is_file():
+            return target
+        fetched = self._fetch_output(target.name)
+        return self._finalise_output(job_id, fetched) if fetched is not None else None
+
+    @property
+    def raw_dir(self) -> Path:
+        """Untrimmed extend outputs — kept for provenance, never listed (not a store root)."""
+        return self.store.roots["out"].parent / "flow-outputs-raw"
+
+    def _finalise_output(self, job_id: str, path: Path) -> Path:
+        """Extend outputs: move the raw file aside and serve only the new footage.
+        Generate outputs (no condition_frames) are served as they came."""
+        condition_frames = self._meta_by_job.get(job_id, {}).get("condition_frames")
+        if not condition_frames:
+            return path
+        self.raw_dir.mkdir(parents=True, exist_ok=True)
+        raw = self.raw_dir / path.name
+        if raw.exists():
+            return path                      # trimmed on an earlier pass
+        path.replace(raw)
+        if trim_prefix(raw, path, int(condition_frames)) is None:
+            raw.replace(path)                # never lose the clip: serve it untrimmed
+            log.error("serving %s untrimmed (%d-frame prefix kept)", path.name, condition_frames)
+        return path
 
     def _to_job(self, j: dict[str, Any]) -> Job:
         status = STATUS.get(str(j.get("status")), "failed")
@@ -233,7 +306,7 @@ class Cosmos3Gateway(FlowGateway):
             return p
         parts = self.store.split(media_id)
         if parts and parts[0] == "out" and parts[1].endswith(".mp4"):
-            return self._fetch_output(parts[1])
+            return self._cache_output(parts[1][: -len(".mp4")])
         return None
 
     def _fetch_output(self, filename: str) -> Path | None:

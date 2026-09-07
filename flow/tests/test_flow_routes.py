@@ -18,6 +18,23 @@ from flow.gateway import Cosmos3Gateway
 
 GW = "http://fake-gateway:8002"
 VALUES = {"size": "720x1280", "length": 8, "steps": 35, "sound": True, "upsample": True, "reasoner": "gemma", "count": 1}
+FFMPEG = shutil.which("ffmpeg")
+FFPROBE = shutil.which("ffprobe")
+
+
+def make_clip(path: Path, seconds: float = 4.0, audio: bool = True) -> Path:
+    """A tiny 24 fps test clip (with a tone track by default)."""
+    argv = ["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", f"color=c=red:s=64x64:d={seconds}:r=24"]
+    if audio:
+        argv += ["-f", "lavfi", "-i", f"sine=frequency=440:duration={seconds}", "-c:a", "aac", "-shortest"]
+    argv += ["-pix_fmt", "yuv420p", str(path)]
+    subprocess.run(argv, check=True)
+    return path
+
+
+def frame_count(path: Path) -> int:
+    out = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0", "-count_frames", "-show_entries", "stream=nb_read_frames", "-of", "csv=p=0", str(path)], capture_output=True, check=True, text=True).stdout
+    return int(out.strip().splitlines()[0])
 
 
 @pytest.fixture
@@ -25,11 +42,21 @@ def media(tmp_path: Path) -> Path:
     return tmp_path
 
 
+_GATEWAYS: dict[int, Cosmos3Gateway] = {}
+
+
+def _gateway_of(client: TestClient) -> Cosmos3Gateway:
+    return _GATEWAYS[id(client.app)]
+
+
 @pytest.fixture
 def client(media: Path):
-    app = create_app(Cosmos3Gateway(base_url=GW, media_dir=media))
+    gw = Cosmos3Gateway(base_url=GW, media_dir=media)
+    app = create_app(gw)
+    _GATEWAYS[id(app)] = gw
     with TestClient(app) as c:
         yield c
+    _GATEWAYS.pop(id(app), None)
 
 
 @pytest.fixture
@@ -108,13 +135,7 @@ def test_generate_rejects_values_the_ui_cannot_offer(client, values):
     assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": values, "reference_id": rid}).status_code == 422
 
 
-@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg is required to make the clip")
-def test_generate_refuses_a_video_reference_for_now(client, tmp_path):
-    clip = tmp_path / "clip.mp4"
-    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x64:d=1:r=24", "-pix_fmt", "yuv420p", str(clip)], check=True)
-    rid = upload(client, "clip.mp4", clip.read_bytes(), "video/mp4")
-    resp = client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": VALUES, "reference_id": rid})
-    assert resp.status_code == 422 and "must be an image" in resp.json()["detail"]
+
 
 
 def test_generate_gateway_4xx_becomes_422_with_its_detail(client, upstream):
@@ -240,3 +261,93 @@ def test_done_poll_survives_a_failed_download(client, upstream, media):
     assert not list((media / "flow-outputs").iterdir())
     assert client.get("/flow/media/out:video_gen_9.mp4", params={"type": "FULL"}).status_code == 404
     assert content.call_count == 2                                                    # lazy path retried
+
+
+# --- STORY_026: Extend ---------------------------------------------------------------------
+
+@pytest.mark.skipif(not FFMPEG, reason="ffmpeg is required to make the clip")
+def test_generate_with_a_video_reference_extends(client, upstream, tmp_path):
+    rid = upload(client, "clip.mp4", make_clip(tmp_path / "clip.mp4").read_bytes(), "video/mp4")
+    route = upstream.post("/generate").mock(return_value=httpx.Response(200, json={"id": "video_gen_x", "status": "queued", "size": "832x480", "condition_frames": 73, "generated_frames": 192}))
+    resp = client.post("/flow/generate", json={"mode": "video", "prompt": "carry on", "values": {**VALUES, "size": "832x480"}, "reference_id": rid})
+    assert resp.status_code == 202, resp.text
+    sent = route.calls.last.request.content
+    assert b'name="video"' in sent and b'name="image"' not in sent
+    assert b'name="condition_seconds"' in sent and b"\r\n3.0\r\n" in sent
+    assert b"\r\n265\r\n" in sent                      # length 8 from a clip → 73 + 192
+    assert resp.json()["duration_s"] == 8
+
+
+def test_generate_with_an_image_reference_sends_no_condition_seconds(client, upstream):
+    rid = upload(client)
+    route = upstream.post("/generate").mock(return_value=httpx.Response(200, json={"id": "video_gen_i", "status": "queued"}))
+    assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": VALUES, "reference_id": rid}).status_code == 202
+    sent = route.calls.last.request.content
+    assert b'name="image"' in sent and b"condition_seconds" not in sent
+
+
+def test_generate_rejects_an_unknown_reference_kind(client, tmp_path):
+    rid = upload(client, "notes.gif", tiny_png(), "image/gif")          # gif is an image kind: accepted
+    assert rid.endswith(".gif")
+    weird = (tmp_path / "flow-uploads" / "x.bin"); weird.write_bytes(b"?")
+    assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": VALUES, "reference_id": "in:x.bin"}).status_code == 422
+
+
+@pytest.mark.skipif(not (FFMPEG and FFPROBE), reason="ffmpeg/ffprobe are required")
+def test_done_extend_is_trimmed_and_raw_kept_aside(client, upstream, media, tmp_path):
+    raw_clip = make_clip(tmp_path / "render.mp4", seconds=4.0)          # 96 frames + tone
+    rid = upload(client, "src.mp4", make_clip(tmp_path / "src.mp4").read_bytes(), "video/mp4")
+    upstream.post("/generate").mock(return_value=httpx.Response(200, json={"id": "video_gen_e", "status": "queued", "condition_frames": 25, "generated_frames": 71}))
+    assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": VALUES, "reference_id": rid}).status_code == 202
+    upstream.get("/jobs/video_gen_e").mock(return_value=httpx.Response(200, json={"id": "video_gen_e", "status": "completed", "condition_frames": 25, "generated_frames": 71}))
+    content = upstream.get("/jobs/video_gen_e/content").mock(return_value=httpx.Response(200, content=raw_clip.read_bytes(), headers={"content-type": "video/mp4"}))
+    job = client.get("/flow/jobs/video_gen_e").json()
+    assert job["status"] == "done" and job["media_id"] == "out:video_gen_e.mp4"
+    served = media / "flow-outputs" / "video_gen_e.mp4"
+    raw = media / "flow-outputs-raw" / "video_gen_e.mp4"
+    assert frame_count(served) == 96 - 25 and frame_count(raw) == 96
+    assert content.call_count == 1 and not list((media / "flow-outputs").glob("*.part"))
+    assert [a["id"] for a in client.get("/flow/media").json() if a["source"] == "output"] == ["out:video_gen_e.mp4"]
+    assert client.get("/flow/jobs/video_gen_e").json()["status"] == "done" and content.call_count == 1   # idempotent
+    assert client.get("/flow/media/out:video_gen_e.mp4", params={"type": "THUMBNAIL"}).headers["content-type"].startswith("image/")
+
+
+@pytest.mark.skipif(not (FFMPEG and FFPROBE), reason="ffmpeg/ffprobe are required")
+def test_done_generate_is_not_trimmed(client, upstream, media, tmp_path):
+    raw_clip = make_clip(tmp_path / "render.mp4", seconds=2.0, audio=False)   # 48 frames, silent
+    rid = upload(client)
+    upstream.post("/generate").mock(return_value=httpx.Response(200, json={"id": "video_gen_g", "status": "queued", "condition_frames": None}))
+    assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": VALUES, "reference_id": rid}).status_code == 202
+    upstream.get("/jobs/video_gen_g").mock(return_value=httpx.Response(200, json={"id": "video_gen_g", "status": "completed"}))
+    upstream.get("/jobs/video_gen_g/content").mock(return_value=httpx.Response(200, content=raw_clip.read_bytes()))
+    assert client.get("/flow/jobs/video_gen_g").json()["status"] == "done"
+    assert frame_count(media / "flow-outputs" / "video_gen_g.mp4") == 48
+    assert not (media / "flow-outputs-raw").exists()
+
+
+@pytest.mark.skipif(not FFMPEG, reason="ffmpeg is required to make the clip")
+def test_trim_failure_serves_the_raw_clip(client, upstream, media, tmp_path, monkeypatch):
+    import flow.gateway as fg
+    monkeypatch.setattr(fg, "trim_prefix", lambda raw, out, n, fps=24: None)
+    rid = upload(client, "src.mp4", make_clip(tmp_path / "src.mp4").read_bytes(), "video/mp4")
+    upstream.post("/generate").mock(return_value=httpx.Response(200, json={"id": "video_gen_f", "status": "queued", "condition_frames": 25}))
+    assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": VALUES, "reference_id": rid}).status_code == 202
+    upstream.get("/jobs/video_gen_f").mock(return_value=httpx.Response(200, json={"id": "video_gen_f", "status": "completed"}))
+    upstream.get("/jobs/video_gen_f/content").mock(return_value=httpx.Response(200, content=MP4_BYTES))
+    assert client.get("/flow/jobs/video_gen_f").json()["status"] == "done"
+    assert (media / "flow-outputs" / "video_gen_f.mp4").read_bytes() == MP4_BYTES       # untrimmed, but served
+    assert not (media / "flow-outputs-raw" / "video_gen_f.mp4").exists()
+
+
+def test_lazy_first_view_also_finalises(client, upstream, media, monkeypatch):
+    """A cache wiped by hand: the first /flow/media access re-fetches through the same finaliser."""
+    import flow.gateway as fg
+    seen: list[tuple] = []
+    monkeypatch.setattr(fg, "trim_prefix", lambda raw, out, n, fps=24: seen.append((raw.name, out.name, n)) or out.write_bytes(b"trimmed") or out)
+    upstream.get("/jobs/video_gen_l/content").mock(return_value=httpx.Response(200, content=MP4_BYTES))
+    gw = _gateway_of(client)      # remember an extend job without going through /generate
+    gw._meta_by_job["video_gen_l"] = {"size": "832x480", "length": 8.0, "condition_frames": 73}
+    resp = client.get("/flow/media/out:video_gen_l.mp4", params={"type": "FULL"})
+    assert resp.status_code == 200 and resp.content == b"trimmed"
+    assert seen == [("video_gen_l.mp4", "video_gen_l.mp4", 73)]
+    assert (media / "flow-outputs-raw" / "video_gen_l.mp4").read_bytes() == MP4_BYTES

@@ -1,6 +1,9 @@
 # EPIC_002 — A browser UI for generating and extending clips
 
-**Status:** Planned
+**Status:** Code complete — STORY_023 and STORY_024 done; STORY_025 and STORY_026 landed and deployed with their
+**renders held** on the memory gate (2026-09-06: NVRM out-of-memory in the kernel log, 24 GiB available beside
+the resident engine, `spark-primary` vLLM running since 08-22 — see BUG_004 and the *Running the held renders*
+section at the end). Re-run `scripts/flow_e2e_renders.sh` when the box has ≥ 30 GiB free.
 **Stories:** STORY_023 → STORY_026
 **Related:** EPIC_001 (V2V), BACKLOG_002 (upstream Flow work this epic depends on for cancel/ETA/extend button)
 **Upstream:** https://github.com/kevinbrowncodes/flow — `protocol/PROTOCOL.md`, `protocol/python/README.md`, release `v0.1.0`
@@ -243,3 +246,16 @@ Cosmos-specific correction is made.
 - [ ] `gateway/server.py` unchanged across the whole epic (`git log -- gateway/server.py` shows no commits from STORY_023–026)
 - [ ] `FLOW_VERSION` documented in `.env.example` and README; upgrade procedure written down
 - [ ] `./scripts/deploy.sh` builds and labels the `flow` image
+
+## Running the held renders
+
+Both E2E renders wait for memory headroom. `scripts/flow_e2e_renders.sh`
+refuses to start unless `free -h` shows ≥ 30 GiB available and the kernel log
+has no NVRM out-of-memory line today; then it runs, in order:
+
+1. `flow-conformance … --generate` at the UI defaults (720p, 8 s) — STORY_025 acceptance, ~44 min
+2. the browser-driven Generate via `flow/tests/e2e_ui_generate.py --submit` — STORY_025 evidence, ~44 min
+3. an Extend of the clip from step 2 at 832x480, Length 10, through the protocol, then `ffprobe` on the served (10.0 s) and raw (313-frame) files — STORY_026 acceptance, ~26 min
+
+Screenshots and reports land in `docs/evidence/STORY_025/` and `docs/evidence/STORY_026/`.
+Do not free memory by stopping `spark-primary` or `hermes` without asking Kevin.

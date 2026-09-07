@@ -133,6 +133,10 @@ package and the UI bundle to one release tag of the flow repo. To upgrade the UI
 Nothing else in this repo changes. Tests: `./scripts/dev_env.sh` once, then
 `.venv/bin/python -m pytest --cov=flow --cov-fail-under=95`; the same suite
 runs inside the image build, so a red suite never becomes an image.
+End-to-end renders: `./scripts/flow_e2e_renders.sh [conformance|ui|extend|all]` — refuses to
+start unless ≥ 30 GiB is available and today's kernel log has no NVRM out-of-memory line.
+**Extend** a clip: open the picker's *Videos* tab, choose a finished output, set Length, Generate —
+the sidecar conditions on its last 3 s and serves only the new footage (raw kept in `flow-outputs-raw/`).
 
 ## Repo layout
 
@@ -146,6 +150,7 @@ data/neg.json               # negative prompt (Cosmos Appendix B.6) — CANONICA
 data/audio.txt              # constant audio directive: ambient only, no dialogue
 scripts/deploy.sh           # build images (with git SHA label) and start the full stack
 scripts/dev_env.sh          # local .venv for the test suite (pins flow-protocol to FLOW_VERSION)
+scripts/flow_e2e_renders.sh # the three EPIC_002 renders (conformance, UI, extend), gated on memory
 scripts/download_models.sh  # re-fetch the 33 GB weights into the expected layout
 scripts/sync_config.sh      # deploy data/* to the runtime location (cosmos-media)
 scripts/export_secrets.sh   # (Spark 1) print HF_TOKEN + ANTHROPIC_API_KEY for transfer

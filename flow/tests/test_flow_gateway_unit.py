@@ -79,7 +79,7 @@ def test_media_roots_are_created(gw, tmp_path):
 def test_capabilities_shape(gw):
     caps = gw.capabilities()
     assert caps.protocol == 1 and caps.name == "Cosmos 3 Nano"
-    assert caps.reference == "required" and caps.reference_kinds == ["image"]
+    assert caps.reference == "required" and caps.reference_kinds == ["image", "video"]
     assert caps.progress == "percent"
     mode = caps.mode("video")
     assert mode is not None
