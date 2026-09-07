@@ -12,7 +12,12 @@ import respx
 from fastapi.testclient import TestClient
 from flow_protocol.conformance import run_checks, tiny_png
 
+from flow.agent_bridge import HAS_AGENT_PROTOCOL
 from flow.app import build_app
+
+# The Docker test stage builds against the pinned flow release; before the tag
+# that ships Agent mode (STORY_028/032) the mirror simply does not exist.
+pytestmark = pytest.mark.skipif(not HAS_AGENT_PROTOCOL, reason="pinned flow-protocol predates Agent mode")
 
 FIXTURES = Path(__file__).parent / "fixtures" / "prompts"
 GW = "http://fake-gateway:8002"

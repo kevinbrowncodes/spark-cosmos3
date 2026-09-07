@@ -121,7 +121,10 @@ def trim_prefix(raw: Path, out: Path, condition_frames: int, fps: int = FPS) -> 
             "-vf", f"select='gte(n,{condition_frames})',setpts=PTS-STARTPTS"]
     if has_audio(raw):
         argv += ["-af", f"atrim=start={condition_frames / fps:.7f},asetpts=PTS-STARTPTS", "-c:a", "aac"]
-    argv += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+    # `-r` gives the last frame a duration. Without it the stream closes at that
+    # frame's *start*, avg_frame_rate reads 240/(239/24) = 24.1 and the gateway's
+    # 24-fps guard rejects the clip as the next Extend source (BUG_007).
+    argv += ["-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p", "-r", str(fps),
              "-movflags", "+faststart", "-f", "mp4", str(tmp)]
     proc = subprocess.run(argv, capture_output=True, timeout=900)
     if proc.returncode != 0 or not tmp.is_file():

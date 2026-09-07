@@ -118,7 +118,9 @@ A browser front end for this box, served by the `flow` sidecar on **:8003**
 and only ever calls the gateway's existing `/generate`, `/jobs/{id}` and
 `/jobs/{id}/content` — `gateway/server.py` is untouched. Uploads and cached
 finished clips live in `FLOW_MEDIA_DIR` (default `~/Documents/flow-media`).
-The container runs as root, so files there are root-owned; prune with `sudo`.
+The container runs as `FLOW_UID:FLOW_GID` (default `1000:1000`, see `.env.example`), so
+everything it writes there is yours to prune. Files a pre-BUG_008 build left root-owned:
+`docker run --rm -v ~/Documents/flow-media:/m python:3.12-slim chown -R 1000:1000 /m`.
 The served index page carries a small `crypto.randomUUID` shim (BUG_005): browsers only
 expose it on https/localhost, and the LAN is plain http.
 Health check: `curl localhost:8003/flow/capabilities`.

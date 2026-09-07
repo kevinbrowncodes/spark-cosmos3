@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+from fractions import Fraction
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -34,6 +36,27 @@ def test_trim_prefix_builds_a_frame_accurate_argv(tmp_path, monkeypatch):
     assert argv[argv.index("-vf") + 1] == "select='gte(n,73)',setpts=PTS-STARTPTS"
     assert argv[argv.index("-af") + 1] == "atrim=start=3.0416667,asetpts=PTS-STARTPTS"
     assert argv[-1].endswith("out.part") and "-c:a" in argv and not list(tmp_path.glob("*.part"))
+    assert argv[argv.index("-r") + 1] == "24"                       # BUG_007
+
+
+@pytest.mark.skipif(not (shutil.which("ffmpeg") and shutil.which("ffprobe")), reason="needs real ffmpeg")
+def test_trim_prefix_keeps_exact_24_fps_with_real_ffmpeg(tmp_path):
+    """BUG_007: a trimmed clip must be a first-class 24 fps clip — avg_frame_rate
+    exactly 24/1 and a duration of nb_frames/24 — or the gateway refuses it as the
+    next Extend source. Synthetic 2 s source: 48 frames + a sine track."""
+    raw = tmp_path / "raw.mp4"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error",
+                    "-f", "lavfi", "-i", "testsrc=duration=2:size=64x64:rate=24",
+                    "-f", "lavfi", "-i", "sine=frequency=440:duration=2",
+                    "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-shortest", str(raw)], check=True)
+    assert has_audio(raw)
+    out = trim_prefix(raw, tmp_path / "out.mp4", 13)
+    assert out is not None
+    fields = subprocess.run(["ffprobe", "-v", "error", "-select_streams", "v:0",
+                             "-show_entries", "stream=avg_frame_rate,duration,nb_frames", "-of", "csv=p=0", str(out)],
+                            capture_output=True, text=True, check=True).stdout.strip().split(",")
+    rate, duration, frames = fields[0], float(fields[1]), int(fields[2])
+    assert Fraction(rate) == 24 and frames == 48 - 13 and abs(duration - frames / 24) < 1e-3
 
 
 def test_trim_prefix_skips_audio_filters_for_silent_clips(tmp_path, monkeypatch):

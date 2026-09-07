@@ -103,6 +103,9 @@ services:
     image: spark-cosmos3-flow:latest
     container_name: cosmos3-flow
     restart: unless-stopped
+    # Run as the host user: everything the sidecar writes under /media then belongs
+    # to whoever mounted it, not root (BUG_008). Override the ids in .env.
+    user: "${FLOW_UID:-1000}:${FLOW_GID:-1000}"
     # The agent's planner talks to Ollama on the HOST, like the gateway does (STORY_029).
     extra_hosts:
       - "host.docker.internal:host-gateway"
