@@ -30,7 +30,7 @@ docker compose exec gateway python -c "import httpx; httpx.get('http://host.dock
 ## Expected vs actual
 
 - **Expected:** `upsample=true` (the default) rewrites the prompt with Gemma; the agent's `POST /agent/plan` returns scripts.
-- **Actual:** the gateway's Gemma call fails on connect and falls back to prose (`upsample_fallback_reason: api_error: …`); the planner returns 502 `ollama unreachable`. Every default-settings render since STORY_022 has been a **prose** render, silently.
+- **Actual:** the gateway's Gemma call fails on connect and falls back to prose (`upsample_fallback_reason: api_error: …`); the planner returns 502 `ollama unreachable`. No render has been submitted since STORY_022 landed (the newest job log is 2026-07-31, before it), so nothing has *yet* rendered as prose because of this — but the first default-settings render would, silently.
 
 ## Root cause
 
