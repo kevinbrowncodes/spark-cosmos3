@@ -116,6 +116,8 @@ services:
       - GEMMA_URL=${GEMMA_URL:-http://host.docker.internal:11434}
       - GEMMA_MODEL=${GEMMA_MODEL:-gemma4:26b}
       - PROMPTS_DIR=/data/prompts
+      - AGENT_MIN_FREE_GIB=${AGENT_MIN_FREE_GIB:-30}
+      - AGENT_TICK_S=${AGENT_TICK_S:-5}
     depends_on:
       - gateway
 

@@ -48,6 +48,9 @@ for r in rows:
 print(f"  {len(rows)} skill(s): " + ", ".join(r["id"] for r in rows))
 PY2
 ok "GET /agent/instructions → 200, valid array (STORY_029)"
+runs=$(curl -fsS "$BASE/agent/runs") || fail "GET /agent/runs"
+echo "$runs" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert isinstance(r, list), r; print(f"  {len(r)} run(s)")' || fail "agent runs shape"
+ok "GET /agent/runs → 200, valid array (STORY_030)"
 
 label=$(docker inspect spark-cosmos3-flow:latest --format '{{ index .Config.Labels "git.sha" }}' 2>/dev/null || true)
 head=$(git rev-parse --short HEAD 2>/dev/null || true)

@@ -139,6 +139,22 @@ def parse_plan(text: str, count: int) -> dict[str, Any]:
     return {"scripts": scripts, "titles": _titles(text), "summary": _summary(text)}
 
 
+def parse_single(text: str, n: int) -> str:
+    """One rewritten script: a single <<<SCRIPT n>>> block, or a marker-less reply."""
+    blocks = _SCRIPT.findall(text)
+    if not blocks:
+        body = _TITLES.sub("", _SUMMARY.sub("", text)).strip()
+        if body:
+            return body
+        raise PlanError("empty rewrite")
+    if len(blocks) != 1 or int(blocks[0][0]) != n:
+        raise PlanError(f"expected exactly one <<<SCRIPT {n}>>> block, got {[int(b[0]) for b in blocks]}")
+    script = blocks[0][1].strip()
+    if not script:
+        raise PlanError("a script block is empty")
+    return script
+
+
 def _titles(text: str) -> list[str]:
     m = _TITLES.search(text)
     return [ln.strip() for ln in m.group(1).splitlines() if ln.strip()] if m else []
@@ -175,8 +191,8 @@ class Planner:
             ],
         }
 
-    async def plan(self, instruction: Instruction, count: int, image: bytes) -> dict[str, Any]:
-        body = self.payload(instruction, count, image)
+    async def _ask(self, body: dict[str, Any], parse: Any) -> tuple[Any, int]:
+        """POST once per attempt and hand the content to `parse`; retry on any failure."""
         reason = "no attempt made"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             for attempt in range(1, self.attempts + 1):
@@ -184,25 +200,41 @@ class Planner:
                     resp = await client.post(f"{self.url}/api/chat", json=body)
                 except httpx.HTTPError as exc:
                     reason = f"ollama unreachable: {exc}"
-                    log.warning("plan attempt %d/%d: %s", attempt, self.attempts, reason)
+                    log.warning("attempt %d/%d: %s", attempt, self.attempts, reason)
                     continue
                 if resp.status_code >= 400:
                     reason = f"ollama {resp.status_code}: {resp.text[:200]}"
-                    log.warning("plan attempt %d/%d: %s", attempt, self.attempts, reason)
+                    log.warning("attempt %d/%d: %s", attempt, self.attempts, reason)
                     continue
                 content = (resp.json().get("message") or {}).get("content") or ""
                 if not content.strip():
                     reason = "empty content"
-                    log.warning("plan attempt %d/%d: %s", attempt, self.attempts, reason)
+                    log.warning("attempt %d/%d: %s", attempt, self.attempts, reason)
                     continue
                 try:
-                    parsed = parse_plan(content, count)
+                    return parse(content), attempt
                 except PlanError as exc:
                     reason = str(exc)
-                    log.warning("plan attempt %d/%d: %s", attempt, self.attempts, reason)
+                    log.warning("attempt %d/%d: %s", attempt, self.attempts, reason)
                     continue
-                return {"instruction": instruction.id, "count": count, **parsed, "attempts": attempt, "model": self.model}
         raise PlanError(f"{reason} (after {self.attempts} attempts)", 502)
+
+    async def plan(self, instruction: Instruction, count: int, image: bytes) -> dict[str, Any]:
+        parsed, attempt = await self._ask(self.payload(instruction, count, image), lambda text: parse_plan(text, count))
+        return {"instruction": instruction.id, "count": count, **parsed, "attempts": attempt, "model": self.model}
+
+    async def rewrite(self, instruction: Instruction, count: int, image: bytes, scripts: list[str], n: int) -> str:
+        """A fresh script n only; the other scripts are shown and held (STORY_030).
+        Titles and summary are not regenerated — EPIC_003 known limitation 4."""
+        body = self.payload(instruction, count, image)
+        others = "\n\n".join(f"<<<SCRIPT {i}>>>\n{s}\n<<<END SCRIPT>>>" for i, s in enumerate(scripts, 1))
+        body["messages"][1]["content"] = (
+            f"The seed image is attached. COUNT = {count}.\n\n"
+            f"Rewrite ONLY script {n} of {count}. Keep every other script exactly as written; do not emit them again.\n"
+            f"Emit exactly one <<<SCRIPT {n}>>> … <<<END SCRIPT>>> block and nothing else.\n\nCurrent scripts:\n{others}"
+        )
+        text, _ = await self._ask(body, lambda text: parse_single(text, n))
+        return text
 
 
 # --- the router -----------------------------------------------------------------------
@@ -214,10 +246,41 @@ class PlanRequest(BaseModel):
     count: int = Field(1, ge=1)
 
 
-def build_agent_router(gateway: Any, planner: Planner, prompts_dir: Path) -> APIRouter:
+class RunRequest(PlanRequest):
+    values: dict[str, Any] = {}
+    project_id: str | None = None
+    autostart: bool = False
+
+
+class ScriptEdit(BaseModel):
+    text: str = Field(min_length=1)
+
+
+def build_agent_router(gateway: Any, planner: Planner, prompts_dir: Path, executor: Any = None) -> APIRouter:
     """`/agent/*` is this backend's own surface, deliberately outside the `/flow`
     protocol prefix so a FLOW_VERSION bump can never collide with it."""
     router = APIRouter(prefix="/agent", tags=["agent"])
+
+    def _instruction(instruction_id: str, count: int) -> Instruction:
+        instruction = next((i for i in load_instructions(prompts_dir) if i.id == instruction_id), None)
+        if instruction is None:
+            raise HTTPException(404, f"unknown instruction {instruction_id!r}")
+        if instruction.count_locked and count != 1:
+            raise HTTPException(422, f"{instruction.id!r} writes a single clip; count must be 1")
+        return instruction
+
+    def _run(run_id: str) -> dict[str, Any]:
+        run = executor.store.load(run_id) if executor else None
+        if run is None:
+            raise HTTPException(404, f"unknown run {run_id!r}")
+        return run
+
+    def _script_index(run: dict[str, Any], n: int) -> int:
+        if not 1 <= n <= run["count"]:
+            raise HTTPException(404, f"run has {run['count']} scripts; no script {n}")
+        if run["state"] != "review":
+            raise HTTPException(409, f"scripts can only change while the run is in review (it is {run['state']})")
+        return n - 1
 
     @router.get("/instructions")
     def instructions() -> list[dict[str, Any]]:
@@ -225,11 +288,7 @@ def build_agent_router(gateway: Any, planner: Planner, prompts_dir: Path) -> API
 
     @router.post("/plan")
     async def plan(req: PlanRequest) -> dict[str, Any]:
-        instruction = next((i for i in load_instructions(prompts_dir) if i.id == req.instruction), None)
-        if instruction is None:
-            raise HTTPException(404, f"unknown instruction {req.instruction!r}")
-        if instruction.count_locked and req.count != 1:
-            raise HTTPException(422, f"{instruction.id!r} writes a single clip; count must be 1")
+        instruction = _instruction(req.instruction, req.count)
         path = gateway.media_path(req.reference_id)
         if path is None:
             raise HTTPException(404, f"unknown reference {req.reference_id!r}")
@@ -239,5 +298,56 @@ def build_agent_router(gateway: Any, planner: Planner, prompts_dir: Path) -> API
             return await planner.plan(instruction, req.count, path.read_bytes())
         except PlanError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
+
+    # --- runs (STORY_030) --------------------------------------------------------------
+
+    @router.post("/runs", status_code=202)
+    def create_run(req: RunRequest) -> dict[str, Any]:
+        instruction = _instruction(req.instruction, req.count)
+        if gateway.media_path(req.reference_id) is None:
+            raise HTTPException(404, f"unknown reference {req.reference_id!r}")
+        try:
+            return executor.create(req.reference_id, instruction, req.count, req.values, req.project_id, req.autostart)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc)) from exc
+
+    @router.get("/runs")
+    def list_runs(project_id: str | None = None) -> list[dict[str, Any]]:
+        return executor.store.list(project_id) if executor else []
+
+    @router.get("/runs/{run_id}")
+    def get_run(run_id: str) -> dict[str, Any]:
+        return _run(run_id)
+
+    @router.patch("/runs/{run_id}/scripts/{n}")
+    def edit_script(run_id: str, n: int, edit: ScriptEdit) -> dict[str, Any]:
+        run = _run(run_id)
+        i = _script_index(run, n)
+        run["scripts"][i] = edit.text.strip()
+        run["clips"][i]["script"] = run["scripts"][i]
+        return executor.store.save(run)
+
+    @router.post("/runs/{run_id}/scripts/{n}/rewrite")
+    async def rewrite_script(run_id: str, n: int) -> dict[str, Any]:
+        run = _run(run_id)
+        _script_index(run, n)
+        try:
+            return await executor.rewrite(run, n)
+        except PlanError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
+
+    @router.post("/runs/{run_id}/approve")
+    def approve(run_id: str) -> dict[str, Any]:
+        run = _run(run_id)
+        if run["state"] != "review":
+            raise HTTPException(409, f"only a run in review can be approved (it is {run['state']})")
+        return executor.approve(run)
+
+    @router.post("/runs/{run_id}/resume")
+    def resume(run_id: str) -> dict[str, Any]:
+        run = _run(run_id)
+        if run["state"] not in ("failed", "paused"):
+            raise HTTPException(409, f"only a failed or paused run can be resumed (it is {run['state']})")
+        return executor.resume(run)
 
     return router

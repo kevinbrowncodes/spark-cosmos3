@@ -8,9 +8,11 @@ as an import side effect — tests and tooling import this module too.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import Mapping
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -20,6 +22,7 @@ from flow_protocol.router import build_router
 
 from flow.agent import Planner, build_agent_router
 from flow.gateway import Cosmos3Gateway
+from flow.runs import Executor, RunStore
 
 log = logging.getLogger("flow")
 
@@ -52,6 +55,9 @@ DEFAULTS: dict[str, str] = {
     "GEMMA_URL": "http://host.docker.internal:11434",
     "GEMMA_MODEL": "gemma4:26b",
     "PROMPTS_DIR": "/data/prompts",
+    # The executor (STORY_030): memory gate before every clip, tick interval (0 = no background loop).
+    "AGENT_MIN_FREE_GIB": "30",
+    "AGENT_TICK_S": "5",
 }
 
 
@@ -83,9 +89,28 @@ def inject_shim(html: str) -> str:
 def build_app(env: Mapping[str, str] | None = None) -> FastAPI:
     cfg = settings(env)
     gateway = build_gateway(cfg)
-    app = FastAPI(title=f"{gateway.capabilities().name} — Flow gateway")
+    planner = Planner(cfg["GEMMA_URL"], cfg["GEMMA_MODEL"])
+    executor = Executor(
+        gateway, planner, RunStore(Path(cfg["FLOW_MEDIA_DIR"]) / "flow-runs"), Path(cfg["PROMPTS_DIR"]),
+        min_free_gib=float(cfg["AGENT_MIN_FREE_GIB"]),
+    )
+    tick_s = float(cfg["AGENT_TICK_S"])
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        # One executor loop per process. Runs on disk survive restarts by construction;
+        # the first ticks pick up whatever state they were left in.
+        task = asyncio.create_task(executor.run_forever(tick_s)) if tick_s > 0 else None
+        try:
+            yield
+        finally:
+            if task:
+                task.cancel()
+
+    app = FastAPI(title=f"{gateway.capabilities().name} — Flow gateway", lifespan=lifespan)
+    app.state.executor = executor
     app.include_router(build_router(gateway))
-    app.include_router(build_agent_router(gateway, Planner(cfg["GEMMA_URL"], cfg["GEMMA_MODEL"]), Path(cfg["PROMPTS_DIR"])))
+    app.include_router(build_agent_router(gateway, planner, Path(cfg["PROMPTS_DIR"]), executor))
 
     ui = Path(cfg["FLOW_UI_DIR"])
     index = ui / "index.html"

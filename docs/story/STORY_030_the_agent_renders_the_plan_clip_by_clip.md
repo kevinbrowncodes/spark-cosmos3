@@ -13,34 +13,34 @@ that a six-clip scene is one decision, not an afternoon of babysitting.
 
 ### Runs are records
 
-- [ ] `POST /agent/runs` `{reference_id, instruction, count, values?, project_id?, autostart?}` creates a run and returns it immediately in state `planning`; planning happens in the background and the run moves to **`review`** (or straight to **`queued`** when `autostart` is true)
-- [ ] A run is one JSON file under `FLOW_MEDIA_DIR/flow-runs/<id>.json`, written atomically on every transition; `GET /agent/runs` (newest first, optional `?project_id=`) and `GET /agent/runs/{id}` read it back
-- [ ] The run carries: `id, project_id, title, state, step, clip_index, clip_count, instruction, count, values, reference_id, scripts[], titles[], summary, clips[{n, script, job_id, media_id, status, progress, error}], autostart, error, attempts, created_at, updated_at`
-- [ ] `title` is the first line of `titles` (or `"Untitled run"`); `values` are validated and defaulted through the gateway's own capabilities — unknown keys **422** — with agent defaults **`832x480`, Length `10`**, steps 35, sound on, upsample on, `count` forced to 1 per clip
-- [ ] A seed may be an image **or a video**: an image seed makes clip 1 an I2V generate; a video seed makes clip 1 an Extend of that clip (the planner sees its poster frame)
+- [x] `POST /agent/runs` `{reference_id, instruction, count, values?, project_id?, autostart?}` creates a run and returns it immediately in state `planning`; planning happens in the background and the run moves to **`review`** (or straight to **`queued`** when `autostart` is true)
+- [x] A run is one JSON file under `FLOW_MEDIA_DIR/flow-runs/<id>.json`, written atomically on every transition; `GET /agent/runs` (newest first, optional `?project_id=`) and `GET /agent/runs/{id}` read it back
+- [x] The run carries: `id, project_id, title, state, step, clip_index, clip_count, instruction, count, values, reference_id, scripts[], titles[], summary, clips[{n, script, job_id, media_id, status, progress, error}], autostart, error, attempts, created_at, updated_at`
+- [x] `title` is the first line of `titles` (or `"Untitled run"`); `values` are validated and defaulted through the gateway's own capabilities — unknown keys **422** — with agent defaults **`832x480`, Length `10`**, steps 35, sound on, upsample on, `count` forced to 1 per clip
+- [x] A seed may be an image **or a video**: an image seed makes clip 1 an I2V generate; a video seed makes clip 1 an Extend of that clip (the planner sees its poster frame)
 
 ### Review
 
-- [ ] `PATCH /agent/runs/{id}/scripts/{n}` `{text}` replaces script *n* (non-empty) while the run is in `review`; any other state → **409**
-- [ ] `POST /agent/runs/{id}/scripts/{n}/rewrite` asks Gemma for a fresh script *n* only — the skill, the seed, the position "clip n of N" and the other scripts are in the prompt; exactly one `<<<SCRIPT n>>>` block is accepted; retries and failures as STORY_029
-- [ ] `POST /agent/runs/{id}/approve` moves `review → queued`; **409** from any other state
+- [x] `PATCH /agent/runs/{id}/scripts/{n}` `{text}` replaces script *n* (non-empty) while the run is in `review`; any other state → **409**
+- [x] `POST /agent/runs/{id}/scripts/{n}/rewrite` asks Gemma for a fresh script *n* only — the skill, the seed, the position "clip n of N" and the other scripts are in the prompt; exactly one `<<<SCRIPT n>>>` block is accepted; retries and failures as STORY_029
+- [x] `POST /agent/runs/{id}/approve` moves `review → queued`; **409** from any other state
 
 ### The chain
 
-- [ ] A single executor in the sidecar renders **one run at a time**, oldest `queued` first; clip *n* is submitted only after clip *n−1* is `done` and cached
-- [ ] Clip 1 uses the seed; clip *n ≥ 2* uses `out:<previous job>.mp4` as a **video** reference — the trimmed clip STORY_026 cached — so every clip is Length seconds of new footage and the chain concatenates clean
-- [ ] Every submission goes through the sidecar's own `Cosmos3Gateway.generate` (the same path a UI click takes): `upsample=true`, the script as the prompt, `condition_seconds=3.0` on extends. **`gateway/server.py` is not touched**
-- [ ] Before **each** submission the executor checks the memory gate: `MemAvailable ≥ AGENT_MIN_FREE_GIB` (default **30**). Below it the run becomes **`paused`** with `error` = `"22 GiB available, need 30"` and is retried on later ticks without losing its place
-- [ ] Progress: `step` is a short present-tense label — `Writing 6 scripts…`, `Waiting for review`, `Queued`, `Rendering clip 2 of 6`, `Caching clip 2`, `Paused: …`, `Done`, `Failed at clip 3: …`; the current clip's `progress` mirrors the gateway's percentage
-- [ ] A clip whose job the gateway reports `failed`, or no longer knows (**404** — the engine restarted), fails the run at that clip with the reason; **`POST /agent/runs/{id}/resume`** puts a `failed`/`paused` run back to `queued` **at the same clip**
-- [ ] After a sidecar restart the executor reloads every run: a `rendering` run keeps polling its current job; a `planning` run is planned again; `review`/`queued`/`done` are untouched
-- [ ] Finished clips are ordinary media: they appear in `/flow/media` and the picker, each with a poster, and `clips[n].media_id` names them
+- [x] A single executor in the sidecar renders **one run at a time**, oldest `queued` first; clip *n* is submitted only after clip *n−1* is `done` and cached
+- [x] Clip 1 uses the seed; clip *n ≥ 2* uses `out:<previous job>.mp4` as a **video** reference — the trimmed clip STORY_026 cached — so every clip is Length seconds of new footage and the chain concatenates clean
+- [x] Every submission goes through the sidecar's own `Cosmos3Gateway.generate` (the same path a UI click takes): `upsample=true`, the script as the prompt, `condition_seconds=3.0` on extends. **`gateway/server.py` is not touched**
+- [x] Before **each** submission the executor checks the memory gate: `MemAvailable ≥ AGENT_MIN_FREE_GIB` (default **30**). Below it the run becomes **`paused`** with `error` = `"22 GiB available, need 30"` and is retried on later ticks without losing its place
+- [x] Progress: `step` is a short present-tense label — `Writing 6 scripts…`, `Waiting for review`, `Queued`, `Rendering clip 2 of 6`, `Caching clip 2`, `Paused: …`, `Done`, `Failed at clip 3: …`; the current clip's `progress` mirrors the gateway's percentage
+- [x] A clip whose job the gateway reports `failed`, or no longer knows (**404** — the engine restarted), fails the run at that clip with the reason; **`POST /agent/runs/{id}/resume`** puts a `failed`/`paused` run back to `queued` **at the same clip**
+- [x] After a sidecar restart the executor reloads every run: a `rendering` run keeps polling its current job; a `planning` run is planned again; `review`/`queued`/`done` are untouched
+- [x] Finished clips are ordinary media: they appear in `/flow/media` and the picker, each with a poster, and `clips[n].media_id` names them
 
 ### Plumbing
 
-- [ ] `AGENT_MIN_FREE_GIB` and `AGENT_TICK_S` (default 5) are environment settings; documented in `.env.example`
-- [ ] `flow/tests/contract.sh` checks `GET /agent/runs` → 200 array
-- [ ] `flow/` stays ≥ 95 % line coverage; `gateway/server.py` untouched
+- [x] `AGENT_MIN_FREE_GIB` and `AGENT_TICK_S` (default 5) are environment settings; documented in `.env.example`
+- [x] `flow/tests/contract.sh` checks `GET /agent/runs` → 200 array
+- [x] `flow/` stays ≥ 95 % line coverage; `gateway/server.py` untouched
 
 ## Technical Notes
 
