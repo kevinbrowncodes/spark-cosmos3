@@ -54,6 +54,6 @@ queued job records.
 
 ## Acceptance criteria
 
-- [ ] The measurements above and the restart recipe are recorded in `docs/spark-notes.md`
+- [x] The measurements above and the restart recipe are recorded in `docs/spark-notes.md`
 - [x] A backlog item proposes the durable fix (executor asks the sidecar to restart an idle engine when the gate trips with no job running, or the engine runs with sleep mode) — no code from this ticket
 - [ ] `run_e3bd921556a7` resumed to `done` after the restart

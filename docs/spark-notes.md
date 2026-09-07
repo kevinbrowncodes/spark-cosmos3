@@ -24,6 +24,17 @@ Three rules:
    Require ≥50 GiB available in `free -h` before `docker compose up -d`.
 3. **Exit 137 = OOM-killed.** The kernel may kill a *different* big process
    than the one that allocated last — an OOM can take down a healthy service.
+4. **The engine keeps its largest render's peak.** vLLM-omni never returns
+   allocations to the host: measured 2026-09-07, engine idle, `ollama ps` empty —
+   after 832x480 work `free -g` read 99 GB used / 22.5 GiB available; ten
+   minutes after one 720x1280 clip, 113 GB used / 8.3 GiB available, and it
+   stayed there (BUG_010). Anything that must load beside the engine afterwards
+   (the gateway's Gemma upsample, ~17 GB; the agent's memory gate,
+   `AGENT_MIN_FREE_GIB`) is blocked until the engine is restarted. Recipe:
+   confirm nothing is rendering (`GET :8002/jobs/{id}` on the last job — the
+   engine emits no logs, BUG_004), then `docker compose restart cosmos3`
+   (~3.5 min to `:8000/health` 200; queued job records are wiped), then
+   `scripts/flow_agent.sh resume <run>` for a paused agent run.
 
 Freeing memory, least → most disruptive:
 
@@ -32,6 +43,7 @@ Freeing memory, least → most disruptive:
 | `curl -X POST http://localhost:8189/free -H 'Content-Type: application/json' -d '{"unload_models": true, "free_memory": true}'` | ComfyUI unloads models, container stays up, reloads on next job |
 | `docker stop ltx2-api ltx2-comfyui` | frees everything LTX holds; restart from spark-ltx2 repo |
 | vLLM `/v1/omni/sleep` | would release Cosmos GPU memory in place, but needs `--enable-sleep-mode` added to the serve command first (untested here) |
+| `docker compose restart cosmos3` (engine idle) | drops the engine back to its ~45 GiB load baseline; the only way today to undo rule 4 |
 
 ## Service inventory (as of 2026-06-12)
 

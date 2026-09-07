@@ -88,9 +88,13 @@ docker-compose.yml
 ## 4. Dev Workflow
 
 - **Always push to `main`** (this is a single-developer ops repo with no staging branch)
-- Before touching the gateway, check that no generation is in progress:
+- Before touching the gateway, check that no generation is in progress.
+  The engine has emitted **no logs since 2026-06-20 (BUG_004)**, so `docker logs
+  cosmos3-api` is blind; use the gateway's job records instead:
   ```bash
-  docker logs cosmos3-api --since 10m | tail
+  ls -t data/logs/jobs | head -3            # newest job files
+  curl -s localhost:8002/jobs/<id>           # status must not be queued/running
+  curl -s localhost:8003/agent/runs | grep -c '"rendering"'   # agent runs, must be 0
   ```
 - After modifying `gateway/server.py`, restart the gateway container only (not the engine):
   ```bash
@@ -113,10 +117,12 @@ docker-compose.yml
 
 ## 5. Architecture — read this first
 
-- Three containers (one compose file): `cosmos3-api` (vLLM-omni engine,
+- Four containers (one compose file): `cosmos3-api` (vLLM-omni engine,
   :8000), `cosmos3-gateway` (canonical request layer, :8002 — **clients call
   this**), `cosmos3-progress` (log-parsing progress sidecar, :8001, consumed
-  by the gateway).
+  by the gateway), `cosmos3-flow` (Flow UI + agent sidecar, :8003 — serves
+  the browser UI at `/flow/`, wraps the gateway, never edits it; code in
+  `flow/`, skills in `data/prompts/`, runs and clips in `~/Documents/flow-media`).
 - **This repo owns the request contract via the gateway** (`gateway/`):
   neg.json + Table 21 params + correct field names are applied server-side
   here. Clients send only image/prompt/size/frames/steps/sound-toggle to
@@ -189,8 +195,14 @@ N/A for memory on GB10. The only trustworthy check is **`free -h`**.
   memory, but they require `--enable-sleep-mode` at startup, which this
   deployment does **not** currently pass.
 - Don't start/stop other model containers without asking — generations run
-  ~50 min and must not be interrupted. Check activity first:
-  `docker logs cosmos3-api --since 10m | tail`.
+  ~50 min and must not be interrupted. Check activity first via the gateway's
+  job records (see §4; `docker logs cosmos3-api` is blind, BUG_004).
+- **The engine keeps its largest render's peak (BUG_010).** After one 720p clip
+  it holds ~113 GB (8 GiB available) until restarted, so the gateway's Gemma
+  upsample and the agent's memory gate (`AGENT_MIN_FREE_GIB`) block. Check
+  `awk '/MemAvailable/ {print $2/1048576}' /proc/meminfo` before queuing
+  multi-clip work after a 720p render; the fix is an **idle**-engine
+  `docker compose restart cosmos3` (~3.5 min), see `docs/spark-notes.md`.
 
 ---
 
@@ -219,7 +231,7 @@ N/A for memory on GB10. The only trustworthy check is **`free -h`**.
 1. **Always read the relevant story file before writing any code.** The story is the spec.
 2. **Never modify a story file's content after it has been implemented.** Acceptance criteria checkboxes may be flipped from `[ ]` to `[x]`, but the prose stays frozen. New requirements → new story.
 3. **When adding a new story, follow the `STORY_NNN_short_slug.md` naming convention.** Three-digit zero-padded numbers. Snake_case slugs. Story numbers must match the order they will be implemented — lowest number ships first. **The `# STORY_NNN — …` heading must use plain-English titles a non-engineer can understand — no raw function names, no jargon acronyms.**
-4. **Never touch the engine container's config or restart it during an active generation.** Check `docker logs cosmos3-api --since 10m | tail` first.
+4. **Never touch the engine container's config or restart it during an active generation.** Check the gateway's job records first (§4) — `docker logs cosmos3-api` shows nothing (BUG_004).
 5. **Test one story at a time.** Never implement multiple stories in a single session. Land one, verify it works, then start the next.
 6. **Every story ships with tests.** At minimum a contract curl test; see Section 3 for the full testing ladder.
 7. **`data/` is source of truth.** Never hand-edit runtime copies in `~/Documents/cosmos-media/`; always edit `data/` and sync.
