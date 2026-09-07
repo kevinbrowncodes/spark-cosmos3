@@ -1,6 +1,6 @@
 # BUG_009 — A queued run says "Caching clip n" when nothing is being cached
 
-**Status:** Resolved 2026-09-07 (container label updates at the next deploy)
+**Status:** Fixed in code 2026-09-07; API verification on a resumed run pending (see Resolution)
 **Found:** 2026-09-07, resuming `run_e3bd921556a7` after BUG_007 (`resume` → `queued | Caching clip 2`)
 **Affects:** `flow/runs.py` `step_label` (STORY_030); shown in the CLI `watch`/`show` output and the Flow UI's run step
 
@@ -33,11 +33,12 @@ scripts/flow_agent.sh show run_e3bd921556a7        # queued  Caching clip 2
 ## Acceptance criteria
 
 - [x] A queued run reads `Queued clip {n+1} of {total}` for every `clip_index`; unit test covers `n == 0`, a mid-run queue, and a post-resume queue
-- [x] The CLI `show` for a resumed run prints the new label (the running container picks it up at the next deploy)
+- [ ] The CLI `show` for a resumed run prints the new label (the running container picks it up at the next deploy)
 
 ## Resolution
 
-`step_label` returns `Queued clip {n+1} of {total}` for every queued run. Note `step` is
-persisted in the run JSON at save time, so an already-queued run keeps its old label
-until it is next saved (any transition or `resume`). Verified with the host-run sidecar
-sharing the store: after a re-`resume`, `show run_e3bd921556a7` → `queued  Queued clip 3 of 3`.
+`step_label` returns `Queued clip {n+1} of {total}` for every queued run (unit-tested for the
+first, a mid-run, and a post-resume queue). `step` is persisted in the run JSON at save time, so an
+already-queued run keeps its old label until its next state change — `run_e3bd921556a7`, queued
+before the fix, still shows `Caching clip 2` and cannot be re-resumed (409) to refresh it. The
+second box is ticked once a failed or paused run is resumed through the API under the new code.
