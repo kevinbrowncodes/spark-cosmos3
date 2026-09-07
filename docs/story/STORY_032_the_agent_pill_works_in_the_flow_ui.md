@@ -14,7 +14,7 @@ in — so that the whole scene workflow lives in the browser.
 - [x] `capabilities.agent` is declared by the sidecar with the count range, default confirm mode and the run fields, exactly as flow `PROTOCOL.md` specifies after STORY-601
 - [x] The sidecar serves the protocol-shaped `/flow/agent/*` routes as a **mirror of `/agent/*`** — same handlers, no second implementation; the CLI keeps working unchanged
 - [x] In the browser: the pill fills white and the model chip hides; the instruction picker lists `data/prompts`; agent settings expose confirm Always/Never and the defaults; a run created in the UI appears as a batch of `count` tiles that fill in order, with the run's `step` shown; a run created by the CLI appears in the same place
-- [ ] The review view edits and rewrites scripts and approves; a paused or failed run shows its reason and offers Resume
+- [x] The review view edits and rewrites scripts and approves; a paused or failed run shows its reason and offers Resume
 - [x] Headless Chromium drives one run from the LAN address through review and approval (no render needed for the check: approve, confirm the run is `queued`, then resume/abandon) — evidence under `docs/evidence/story-032-agent-ui/`
 - [x] `gateway/server.py`, `flow/runs.py` and the executor untouched — the UI is a client of what STORY_030 built
 - [x] `flow/` stays ≥ 95 % line coverage
