@@ -140,6 +140,28 @@ start unless ≥ 30 GiB is available and today's kernel log has no NVRM out-of-m
 **Extend** a clip: open the picker's *Videos* tab, choose a finished output, set Length, Generate —
 the sidecar conditions on its last 3 s and serves only the new footage (raw kept in `flow-outputs-raw/`).
 
+### The scene agent (EPIC_003)
+
+A **skill** is one of the prompt files in `data/prompts/` (frontmatter `name` +
+`description`; `{{COUNT}}` marks a multi-clip skill). The agent runs one Gemma
+call per plan — seed image + skill + count → every script, titles, and the arc
+summary — then renders clip 1 from the seed and **extends** it clip by clip on
+the last 3 s, server-side and resumable, pausing rather than submitting when
+less than `AGENT_MIN_FREE_GIB` (30) is free. Runs live in `flow-media/flow-runs/`.
+
+```bash
+scripts/flow_agent.sh skills                                   # what's in data/prompts
+scripts/flow_agent.sh plan  photo.jpg example-forecast-scene 3 # dry run: scripts only, nothing rendered
+scripts/flow_agent.sh run   photo.jpg example-forecast-scene 3 # plan → review (Always by default)
+scripts/flow_agent.sh show  run_…  ·  edit run_… 2  ·  rewrite run_… 3
+scripts/flow_agent.sh approve run_…  &&  scripts/flow_agent.sh watch run_…
+scripts/flow_agent.sh run photo.jpg example-forecast-scene 6 --zero-shot     # no review, straight to render
+```
+
+Defaults are 832×480 and 10 s per clip (`--size`, `--length` to change); a
+6-clip scene is ~2.5 h at 480p and ~7.6 h at 720p. Routes: `/agent/*` on the
+sidecar — outside the Flow protocol prefix on purpose.
+
 ## Repo layout
 
 ```
@@ -153,6 +175,8 @@ data/audio.txt              # constant audio directive: ambient only, no dialogu
 scripts/deploy.sh           # build images (with git SHA label) and start the full stack
 scripts/dev_env.sh          # local .venv for the test suite (pins flow-protocol to FLOW_VERSION)
 scripts/flow_e2e_renders.sh # the three EPIC_002 renders (conformance, UI, extend), gated on memory
+scripts/flow_agent.sh       # the scene agent from a terminal: skills · plan · run · edit · approve · watch
+data/prompts/               # agent skills — one prompt file per style, picked per run
 scripts/download_models.sh  # re-fetch the 33 GB weights into the expected layout
 scripts/sync_config.sh      # deploy data/* to the runtime location (cosmos-media)
 scripts/export_secrets.sh   # (Spark 1) print HF_TOKEN + ANTHROPIC_API_KEY for transfer
