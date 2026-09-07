@@ -37,4 +37,7 @@ scripts/flow_agent.sh show run_e3bd921556a7        # queued  Caching clip 2
 
 ## Resolution
 
-`step_label` returns `Queued clip {n+1} of {total}` for every queued run. Verified with the host-run sidecar sharing the store: `show run_e3bd921556a7` → `queued  Queued clip 3 of 3`.
+`step_label` returns `Queued clip {n+1} of {total}` for every queued run. Note `step` is
+persisted in the run JSON at save time, so an already-queued run keeps its old label
+until it is next saved (any transition or `resume`). Verified with the host-run sidecar
+sharing the store: after a re-`resume`, `show run_e3bd921556a7` → `queued  Queued clip 3 of 3`.
