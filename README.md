@@ -113,8 +113,11 @@ From the Cosmos Technical Report, Table 21 (Cosmos3-Nano audio-visual):
 ## Flow UI
 
 A browser front end for this box, served by the `flow` sidecar on **:8003**
-(**`http://spark-1.local:8003/flow/`** from any machine on the LAN; `/ui/` also works). It implements the
-[Flow Gateway Protocol](https://github.com/kevinbrowncodes/flow/blob/v0.1.0/protocol/PROTOCOL.md)
+(**`http://spark-1.local:8003/flow/`** from any machine on the LAN; `/ui/` also works). It opens on a
+**projects home** (STORY_028, flow v0.2.0): a grid of your projects with a **New project** button,
+hover rename/delete, and a ⋮ menu with About and Delete all; projects live in the browser's storage.
+It implements the
+[Flow Gateway Protocol](https://github.com/kevinbrowncodes/flow/blob/v0.2.0/protocol/PROTOCOL.md)
 and only ever calls the gateway's existing `/generate`, `/jobs/{id}` and
 `/jobs/{id}/content` — `gateway/server.py` is untouched. Uploads and cached
 finished clips live in `FLOW_MEDIA_DIR` (default `~/Documents/flow-media`).
@@ -126,7 +129,7 @@ expose it on https/localhost, and the LAN is plain http.
 Health check: `curl localhost:8003/flow/capabilities`.
 Field mapping and caching rules: `docs/api.md` → *Flow UI sidecar*.
 
-**`FLOW_VERSION`** (`.env`, default `v0.1.0`) pins both the `flow-protocol`
+**`FLOW_VERSION`** (`.env`, default `v0.2.0`) pins both the `flow-protocol`
 package and the UI bundle to one release tag of the flow repo. To upgrade the UI:
 
 1. bump `FLOW_VERSION` in `.env`

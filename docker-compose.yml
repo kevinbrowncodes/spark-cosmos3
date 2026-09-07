@@ -99,7 +99,7 @@ services:
       dockerfile: flow/Dockerfile
       args:
         GIT_SHA: ${GIT_SHA:-unknown}
-        FLOW_VERSION: ${FLOW_VERSION:-v0.1.0}
+        FLOW_VERSION: ${FLOW_VERSION:-v0.2.0}
     image: spark-cosmos3-flow:latest
     container_name: cosmos3-flow
     restart: unless-stopped

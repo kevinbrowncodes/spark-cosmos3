@@ -29,6 +29,15 @@ for path in /flow/ /ui/; do
   curl -s "$BASE$path" | grep -q 'randomUUID=function' || fail "GET $path lacks the crypto.randomUUID shim (BUG_005)"
   ok "GET $path → 200 text/html, shim present"
 done
+# STORY_028: the served bundle is the one with the projects home (v0.2.0+): its main
+# script carries the home page's markers, not just a 200 shell.
+js=$(curl -s "$BASE/flow/" | grep -o 'src="[^"]*\.js"' | head -1 | sed 's/src="//; s/"$//')
+[ -n "$js" ] || fail "GET /flow/ has no script tag"
+case "$js" in /*) jsurl="$BASE$js";; *) jsurl="$BASE/flow/$js";; esac
+bundle=$(curl -fsS "$jsurl") || fail "GET $jsurl"
+echo "$bundle" | grep -q 'New project' || fail "bundle lacks the projects home (no 'New project')"
+echo "$bundle" | grep -q 'projects-grid' || fail "bundle lacks the projects grid marker"
+ok "GET /flow/ serves the projects home bundle ($js)"
 loc=$(curl -s -o /dev/null -w '%{redirect_url}' "$BASE/")
 [[ "$loc" == */flow/ ]] || fail "GET / does not redirect to /flow/ (got '$loc')"
 ok "GET / → /flow/"

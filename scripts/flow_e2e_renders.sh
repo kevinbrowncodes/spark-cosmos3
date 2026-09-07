@@ -43,6 +43,7 @@ phase_conformance() {   # STORY_025: the protocol path, exactly what the UI send
 
 phase_ui() {            # STORY_025: a person's click path, in headless Chromium
   "$PY" flow/tests/e2e_ui_generate.py --still "$STILL" --out docs/evidence/STORY_025 --submit --timeout 3600 \
+    ${UI_STATE:+--state "$UI_STATE"} \
     --prompt "A man in a cap looks up from his work and grins as sunlight moves across the room." \
     | tee docs/evidence/STORY_025/ui-generate.txt
 }

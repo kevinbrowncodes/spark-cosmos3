@@ -51,3 +51,9 @@ page errors, reference attached, prompt typed — evidence in
 `docs/evidence/STORY_027/` (before/after). The upstream fix — a
 `getRandomValues` fallback in `src/adapter/contract.js` — is still to be filed
 in `kevinbrowncodes/flow`; when it ships, nothing here needs to change.
+
+**Update 2026-09-07 (STORY_028):** the upstream fix shipped in flow `v0.2.0` — `uuid()` in
+`src/adapter/contract.js` falls back to `getRandomValues` when `crypto.randomUUID` is absent.
+The sidecar's shim stays as belt-and-braces for anyone pinning an older `FLOW_VERSION`; it
+was verified redundant by driving the v0.2.0 bundle over plain http with the shim stripped
+(evidence in `docs/evidence/story-028-home-page/`).

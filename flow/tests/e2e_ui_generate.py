@@ -29,6 +29,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--submit", action="store_true", help="actually press Generate and wait for the tile")
     ap.add_argument("--timeout", type=float, default=3600.0)
     ap.add_argument("--shot-every", type=float, default=300.0)
+    ap.add_argument("--state", type=Path, help="save the browser storage state here on success (STORY_028 thumbnail check)")
     args = ap.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -41,6 +42,11 @@ def main(argv: list[str] | None = None) -> int:
         page.on("pageerror", lambda e: errors.append(str(e)))      # BUG_005 regression guard
         page.goto(f"{args.base}{args.ui_path}", wait_until="networkidle", timeout=60_000)
         print("secure context:", page.evaluate("window.isSecureContext"))
+        # flow v0.2.0 opens on the projects home (STORY_028): start a project first
+        new_project = page.get_by_role("button", name="New project")
+        if new_project.count():
+            new_project.click()
+            page.wait_for_selector("[data-testid=composer]", timeout=30_000)
 
         page.locator('[aria-label="Add assets"], [title="Add assets"]').first.click()
         dialog = page.locator('[role="dialog"][aria-label="Add to Prompt"]')
@@ -80,6 +86,8 @@ def main(argv: list[str] | None = None) -> int:
             if tile.locator("img").count() and "poster" in (tile.locator("img").first.get_attribute("class") or ""):
                 page.screenshot(path=str(args.out / "04-done.png"))
                 print(f"done after {int(time.monotonic() - started)} s")
+                if args.state:
+                    page.context.storage_state(path=str(args.state))
                 browser.close()
                 return 0
             pct = tile.inner_text().strip().replace("\n", " ")
