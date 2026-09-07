@@ -196,6 +196,24 @@ still measured over the total.
 | Method | Path | Notes |
 | GET | `/jobs/{id}` | upstream status with a **moving progress bar**: a gateway elapsed-time estimate (`progress_source: "estimate"`, `eta_s` = expected − elapsed) that climbs as the render runs, capped at 99; the log sidecar then pins it to 99 (`progress_source: "sidecar"`) once denoise finishes (the VAE/audio/encode tail), and it snaps to 100 on completion. Progress is `max(server, estimate)` so a future real server value would win |
 | GET | `/jobs/{id}/content` | streams the MP4 |
+
+### Flow UI sidecar (`:8003`)
+
+The `flow` container (EPIC_002) hosts the Flow editor at `http://<spark>:8003/ui/`
+and implements the [Flow Gateway Protocol v1](https://github.com/kevinbrowncodes/flow/blob/v0.1.0/protocol/PROTOCOL.md)
+under `/flow/*`. It is a pure client of this gateway: it only calls
+`POST /generate`, `GET /jobs/{id}` and `GET /jobs/{id}/content`, and never
+the engine. Two rules worth knowing when reading its traffic:
+
+- **Length, not frames.** The UI offers 5 / 8 / 10 s of *new* video; the
+  sidecar sends `frames` snapped to 4k+1 — 121 / 193 / 241 from a still, 193 /
+  265 / 313 when extending a clip (73 conditioning frames = `condition_seconds=3.0`).
+- **Finished clips are cached on the poll that reports `completed`** into
+  `FLOW_MEDIA_DIR/flow-outputs/<id>.mp4`, because the engine forgets jobs on
+  restart and `/jobs/{id}/content` then 404s. `duration_s` shown in the UI is
+  the requested length, never this payload's unused `seconds` field.
+
+Health: `GET :8003/flow/capabilities`. Conformance: `docker compose exec flow flow-conformance http://localhost:8003`.
 | DELETE | `/jobs/{id}` | delete the job record. ⚠️ does NOT stop in-flight GPU work — vLLM-Omni aborts are bookkeeping only; an orphaned render runs to completion and blocks the queue |
 | DELETE | `/jobs/{id}?hard=true` | **hard stop**: deletes the record AND, if this job is the active render, restarts the engine via the sidecar to actually reclaim the GPU. Costs ~3.5 min model reload and wipes all queued job records. Response: `{"hard": true, "engine_restarting": bool, "engine_down_confirmed": bool}` — the gateway waits (≤30 s) for the engine to actually go down before returning, so `engine_down_confirmed: true` means the subsequent `GET /health` → `cosmos: true` is a real ready signal (not the pre-restart container still answering). Poll `/health` until `cosmos: true` before resubmitting |
 | GET | `/health` | `{"gateway": "ok", "cosmos": true}` |

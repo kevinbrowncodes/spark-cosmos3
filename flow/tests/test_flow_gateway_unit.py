@@ -153,3 +153,18 @@ def test_generate_with_no_reference_at_all_is_404(gw):
     with pytest.raises(UpstreamError) as exc:
         gw.generate(GenerateRequest(mode="video", prompt="x", values={}))
     assert exc.value.status == 404
+
+
+# --- STORY_025: cache on completion -------------------------------------------------
+
+def test_cache_output_leaves_an_existing_file_alone(gw, tmp_path, monkeypatch):
+    cached = tmp_path / "flow-outputs" / "v1.mp4"
+    cached.write_bytes(b"mp4")
+    monkeypatch.setattr(gw, "_fetch_output", lambda name: pytest.fail(f"must not fetch {name}"))
+    assert gw._cache_output("v1") == cached
+
+
+def test_cache_output_fetches_when_missing(gw, monkeypatch):
+    calls: list[str] = []
+    monkeypatch.setattr(gw, "_fetch_output", lambda name: calls.append(name) or None)
+    assert gw._cache_output("v2") is None and calls == ["v2.mp4"]

@@ -120,6 +120,7 @@ and only ever calls the gateway's existing `/generate`, `/jobs/{id}` and
 finished clips live in `FLOW_MEDIA_DIR` (default `~/Documents/flow-media`).
 The container runs as root, so files there are root-owned; prune with `sudo`.
 Health check: `curl localhost:8003/flow/capabilities`.
+Field mapping and caching rules: `docs/api.md` → *Flow UI sidecar*.
 
 **`FLOW_VERSION`** (`.env`, default `v0.1.0`) pins both the `flow-protocol`
 package and the UI bundle to one release tag of the flow repo. To upgrade the UI:

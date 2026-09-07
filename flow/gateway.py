@@ -8,6 +8,8 @@
 #              length / generated_frames, never the payload's unused `seconds`;
 #              non-image references refused; footer text; _sizes_by_job →
 #              _meta_by_job
+#   STORY_025  a finished clip is cached the moment a poll reports done
+#              (vLLM-omni forgets jobs on restart), not on first view
 """Reference gateway for spark-cosmos3 (NVIDIA Cosmos 3 Nano behind the
 cosmos3-gateway on :8002).
 
@@ -183,7 +185,21 @@ class Cosmos3Gateway(FlowGateway):
             return None
         if resp.status_code >= 400:
             raise UpstreamError(f"cosmos3 gateway: {resp.text[:400]}")
-        return self._to_job(resp.json())
+        job = self._to_job(resp.json())
+        if job.status == "done":
+            self._cache_output(job.id)
+        return job
+
+    def _cache_output(self, job_id: str) -> Path | None:
+        """Download a finished clip as soon as a poll reports it done (STORY_025).
+
+        The engine forgets every job when it restarts and /jobs/{id}/content
+        then 404s, so a clip nobody has clicked yet would be lost. Idempotent:
+        an existing cache file is left alone; a failed download leaves nothing
+        behind and `media_path` retries lazily on first view.
+        """
+        target = self.store.roots["out"] / f"{job_id}.mp4"
+        return target if target.is_file() else self._fetch_output(target.name)
 
     def _to_job(self, j: dict[str, Any]) -> Job:
         status = STATUS.get(str(j.get("status")), "failed")

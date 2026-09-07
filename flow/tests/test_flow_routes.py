@@ -156,6 +156,7 @@ def test_job_running(client, upstream):
 
 def test_job_done_carries_media_id(client, upstream):
     upstream.get("/jobs/video_gen_1").mock(return_value=httpx.Response(200, json={"id": "video_gen_1", "status": "completed", "progress": 100, "size": "704x1280"}))
+    upstream.get("/jobs/video_gen_1/content").mock(return_value=httpx.Response(200, content=MP4_BYTES))   # STORY_025 caches on done
     job = client.get("/flow/jobs/video_gen_1").json()
     assert job["status"] == "done" and job["media_id"] == "out:video_gen_1.mp4"
 
@@ -209,3 +210,33 @@ def test_conformance_contract_checks_pass_in_process(client, upstream):
     upstream.get("/jobs/does-not-exist").mock(return_value=httpx.Response(404, json={"detail": "no such job"}))
     failed = [c for c in run_checks(client, generate=False) if not c.ok]
     assert not failed, [(c.name, c.detail) for c in failed]
+
+
+# --- STORY_025: the poll that reports done caches the clip ---------------------------------
+
+def test_done_poll_caches_the_clip_once(client, upstream, media):
+    upstream.get("/jobs/video_gen_9").mock(return_value=httpx.Response(200, json={"id": "video_gen_9", "status": "completed", "size": "704x1280"}))
+    content = upstream.get("/jobs/video_gen_9/content").mock(return_value=httpx.Response(200, content=MP4_BYTES, headers={"content-type": "video/mp4"}))
+    job = client.get("/flow/jobs/video_gen_9").json()
+    assert job["status"] == "done" and job["media_id"] == "out:video_gen_9.mp4"
+    assert (media / "flow-outputs" / "video_gen_9.mp4").read_bytes() == MP4_BYTES
+    assert content.call_count == 1
+    assert client.get("/flow/jobs/video_gen_9").json()["status"] == "done"        # second poll: no re-download
+    assert client.get("/flow/media/out:video_gen_9.mp4", params={"type": "FULL"}).content == MP4_BYTES
+    assert content.call_count == 1
+    assert not list((media / "flow-outputs").glob("*.part"))
+
+
+def test_running_poll_does_not_touch_content(client, upstream):
+    upstream.get("/jobs/video_gen_9").mock(return_value=httpx.Response(200, json={"id": "video_gen_9", "status": "in_progress", "progress": 10}))
+    content = upstream.get("/jobs/video_gen_9/content").mock(return_value=httpx.Response(200, content=MP4_BYTES))
+    assert client.get("/flow/jobs/video_gen_9").json()["status"] == "running" and content.call_count == 0
+
+
+def test_done_poll_survives_a_failed_download(client, upstream, media):
+    upstream.get("/jobs/video_gen_9").mock(return_value=httpx.Response(200, json={"id": "video_gen_9", "status": "completed"}))
+    content = upstream.get("/jobs/video_gen_9/content").mock(return_value=httpx.Response(404))
+    assert client.get("/flow/jobs/video_gen_9").json()["status"] == "done"            # the job is still reported honestly
+    assert not list((media / "flow-outputs").iterdir())
+    assert client.get("/flow/media/out:video_gen_9.mp4", params={"type": "FULL"}).status_code == 404
+    assert content.call_count == 2                                                    # lazy path retried
