@@ -1,0 +1,11 @@
+# Everything needed to run the full test suite from a fresh checkout.
+# Create the env with scripts/dev_env.sh — it also installs flow-protocol at
+# the pinned FLOW_VERSION, kept out of this file so the pin has one home.
+-r flow/requirements-test.txt
+# gateway/ runtime deps, mirroring gateway/Dockerfile
+fastapi==0.115.*
+uvicorn[standard]==0.32.*
+httpx==0.28.*
+python-multipart==0.0.20
+anthropic
+av==18.0.*

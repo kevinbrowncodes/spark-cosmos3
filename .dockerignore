@@ -1,0 +1,9 @@
+# Only flow/Dockerfile builds from the repo root; it needs flow/ plus the two
+# test configs. Everything else (weights caches, logs, docs) stays out.
+*
+!flow
+!pytest.ini
+!.coveragerc
+**/__pycache__
+**/.pytest_cache
+**/.coverage

@@ -17,20 +17,20 @@ generation is STORY_025.
 
 ## Acceptance Criteria
 
-- [ ] `flow/Dockerfile` builds from `python:3.12-slim`, installs `ffmpeg`, and installs `flow-protocol[server]` from the flow git tag named by `ARG FLOW_VERSION` (default `v0.1.0`)
-- [ ] The same `FLOW_VERSION` downloads `flow-ui-${FLOW_VERSION}.tar.gz` from the flow GitHub release and unpacks it into `/app/flow-ui` — the pip pin and the UI pin can never disagree
-- [ ] The image carries the `git.sha` label exactly as the gateway and progress images do (STORY_013)
-- [ ] `flow/gateway.py` is a copy of upstream `protocol/python/flow_protocol/examples/cosmos3.py` at `FLOW_VERSION`; the only edits are the three relative imports rewritten as `flow_protocol.*` absolute imports, and a header recording the source tag and the SHA-256 of the upstream file so drift is detectable
-- [ ] `flow/app.py` builds the ASGI app from environment: `COSMOS_GATEWAY_URL` (default `http://gateway:8002`), `FLOW_MEDIA_DIR` (default `/media`), `RESOLUTION_DICT` (default `/data/resolution_ratio_dict.json`), `FLOW_UI_DIR` (default `/app/flow-ui`)
-- [ ] `docker-compose.yml` gains a `flow` service: image `spark-cosmos3-flow:latest`, container `cosmos3-flow`, port `8003:8003`, `restart: unless-stopped`, `depends_on: gateway`, volumes `${FLOW_MEDIA_DIR:-${HOME}/Documents/flow-media}:/media` and `./data:/data:ro`, build args `FLOW_VERSION` and `GIT_SHA`
-- [ ] `.env.example` documents `FLOW_VERSION` and `FLOW_MEDIA_DIR`; the stale `AEON_URL` block (removed by STORY_022, and it names port 8003) is deleted
-- [ ] `scripts/deploy.sh` builds `flow` with the SHA baked in and prints its label alongside the other two
-- [ ] `flow-conformance http://localhost:8003` (contract only, run inside the container) passes every check
-- [ ] `http://localhost:8003/ui/` loads the editor, the composer chip reads **Cosmos 3 Nano**, and no protocol-mismatch screen appears
-- [ ] `curl localhost:8003/flow/capabilities` returns 200 with `"protocol": 1` — this is the sidecar's health check
-- [ ] README gains a **Flow UI** section (port, `FLOW_VERSION`, the three-step upgrade: bump the pin → rebuild the image → re-run conformance) and `flow/` appears in the repo layout
-- [ ] `flow/` holds ≥ 95 % line coverage; `requirements-dev.txt` and `pytest.ini` make `python3 -m pytest --cov=flow --cov-fail-under=95` runnable from a fresh checkout
-- [ ] `git diff STORY_022..HEAD -- gateway/server.py` is empty
+- [x] `flow/Dockerfile` builds from `python:3.12-slim`, installs `ffmpeg`, and installs `flow-protocol[server]` from the flow git tag named by `ARG FLOW_VERSION` (default `v0.1.0`)
+- [x] The same `FLOW_VERSION` downloads `flow-ui-${FLOW_VERSION}.tar.gz` from the flow GitHub release and unpacks it into `/app/flow-ui` — the pip pin and the UI pin can never disagree
+- [x] The image carries the `git.sha` label exactly as the gateway and progress images do (STORY_013)
+- [x] `flow/gateway.py` is a copy of upstream `protocol/python/flow_protocol/examples/cosmos3.py` at `FLOW_VERSION`; the only edits are the three relative imports rewritten as `flow_protocol.*` absolute imports, and a header recording the source tag and the SHA-256 of the upstream file so drift is detectable
+- [x] `flow/app.py` builds the ASGI app from environment: `COSMOS_GATEWAY_URL` (default `http://gateway:8002`), `FLOW_MEDIA_DIR` (default `/media`), `RESOLUTION_DICT` (default `/data/resolution_ratio_dict.json`), `FLOW_UI_DIR` (default `/app/flow-ui`)
+- [x] `docker-compose.yml` gains a `flow` service: image `spark-cosmos3-flow:latest`, container `cosmos3-flow`, port `8003:8003`, `restart: unless-stopped`, `depends_on: gateway`, volumes `${FLOW_MEDIA_DIR:-${HOME}/Documents/flow-media}:/media` and `./data:/data:ro`, build args `FLOW_VERSION` and `GIT_SHA`
+- [x] `.env.example` documents `FLOW_VERSION` and `FLOW_MEDIA_DIR`; the stale `AEON_URL` block (removed by STORY_022, and it names port 8003) is deleted
+- [x] `scripts/deploy.sh` builds `flow` with the SHA baked in and prints its label alongside the other two
+- [x] `flow-conformance http://localhost:8003` (contract only, run inside the container) passes every check
+- [x] `http://localhost:8003/ui/` loads the editor, the composer chip reads **Cosmos 3 Nano**, and no protocol-mismatch screen appears
+- [x] `curl localhost:8003/flow/capabilities` returns 200 with `"protocol": 1` — this is the sidecar's health check
+- [x] README gains a **Flow UI** section (port, `FLOW_VERSION`, the three-step upgrade: bump the pin → rebuild the image → re-run conformance) and `flow/` appears in the repo layout
+- [x] `flow/` holds ≥ 95 % line coverage; `requirements-dev.txt` and `pytest.ini` make `python3 -m pytest --cov=flow --cov-fail-under=95` runnable from a fresh checkout
+- [x] `git diff STORY_022..HEAD -- gateway/server.py` is empty
 
 ## Technical Notes
 

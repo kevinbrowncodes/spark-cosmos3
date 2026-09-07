@@ -89,6 +89,30 @@ services:
       - cosmos3
       - progress
 
+  # Flow UI sidecar (EPIC_002): hosts the Flow editor on :8003 and speaks the
+  # Flow Gateway Protocol to the browser. It only ever calls the gateway's
+  # existing /generate, /jobs/{id} and /jobs/{id}/content. FLOW_VERSION pins
+  # both the protocol package and the UI bundle to one flow release tag.
+  flow:
+    build:
+      context: .
+      dockerfile: flow/Dockerfile
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        FLOW_VERSION: ${FLOW_VERSION:-v0.1.0}
+    image: spark-cosmos3-flow:latest
+    container_name: cosmos3-flow
+    restart: unless-stopped
+    ports:
+      - "8003:8003"
+    volumes:
+      - ${FLOW_MEDIA_DIR:-${HOME}/Documents/flow-media}:/media  # uploads + cached clips
+      - ./data:/data:ro                                        # resolution_ratio_dict.json
+    environment:
+      - COSMOS_GATEWAY_URL=http://gateway:8002
+    depends_on:
+      - gateway
+
   progress:
     build:
       context: ./progress-sidecar

@@ -110,16 +110,41 @@ From the Cosmos Technical Report, Table 21 (Cosmos3-Nano audio-visual):
 | GET | `/v1/videos/{id}/content` | download the MP4 |
 | GET | `/health` | liveness |
 
+## Flow UI
+
+A browser front end for this box, served by the `flow` sidecar on **:8003**
+(`http://<spark>:8003/ui/`). It implements the
+[Flow Gateway Protocol](https://github.com/kevinbrowncodes/flow/blob/v0.1.0/protocol/PROTOCOL.md)
+and only ever calls the gateway's existing `/generate`, `/jobs/{id}` and
+`/jobs/{id}/content` — `gateway/server.py` is untouched. Uploads and cached
+finished clips live in `FLOW_MEDIA_DIR` (default `~/Documents/flow-media`).
+The container runs as root, so files there are root-owned; prune with `sudo`.
+Health check: `curl localhost:8003/flow/capabilities`.
+
+**`FLOW_VERSION`** (`.env`, default `v0.1.0`) pins both the `flow-protocol`
+package and the UI bundle to one release tag of the flow repo. To upgrade the UI:
+
+1. bump `FLOW_VERSION` in `.env`
+2. rebuild: `./scripts/deploy.sh`
+3. re-run conformance: `docker compose exec flow flow-conformance http://localhost:8003`
+   (add `--generate --reference <still> --timeout 3600` for one real render)
+
+Nothing else in this repo changes. Tests: `./scripts/dev_env.sh` once, then
+`.venv/bin/python -m pytest --cov=flow --cov-fail-under=95`; the same suite
+runs inside the image build, so a red suite never becomes an image.
+
 ## Repo layout
 
 ```
 docker-compose.yml          # the deployment — pinned upstream image + serve command
 gateway/                    # canonical request layer on :8002 — call this, not :8000
 progress-sidecar/           # serves real per-step progress on :8001 (vLLM-Omni's progress field is static)
+flow/                       # Flow UI sidecar on :8003 — browser front end, calls the gateway only
 .env.example                # HF_TOKEN and path overrides (copy to .env)
 data/neg.json               # negative prompt (Cosmos Appendix B.6) — CANONICAL copy
 data/audio.txt              # constant audio directive: ambient only, no dialogue
 scripts/deploy.sh           # build images (with git SHA label) and start the full stack
+scripts/dev_env.sh          # local .venv for the test suite (pins flow-protocol to FLOW_VERSION)
 scripts/download_models.sh  # re-fetch the 33 GB weights into the expected layout
 scripts/sync_config.sh      # deploy data/* to the runtime location (cosmos-media)
 scripts/export_secrets.sh   # (Spark 1) print HF_TOKEN + ANTHROPIC_API_KEY for transfer

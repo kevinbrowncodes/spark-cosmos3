@@ -45,3 +45,7 @@ venv/
 .vscode/
 .idea/
 .DS_Store
+
+# coverage data
+.coverage
+.coverage.*
