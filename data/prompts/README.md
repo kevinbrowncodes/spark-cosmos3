@@ -1,7 +1,17 @@
 # Agent prompt library
 
 Each `*.md` here is one **skill** the agent can run (EPIC_003). Drop Kevin's
-skill files in as-is — the frontmatter they already carry is the contract:
+skill files in as-is — the frontmatter they already carry is the contract.
+
+Installed 2026-09-07 (verbatim, named after their frontmatter `name`):
+`cosmos-3-i2v-scene`, `cosmos-3-i2v-amg-scene`, `cosmos-3-i2v-helios-scene`,
+`cosmos-3-i2v-time-forecast-scene`, `cosmos-3-i2v-time-thirst-scene`,
+`cosmos-3-i2v-weber-scene`, `cosmos-3-i2v-time-youtube-formula-scene`, plus the
+neutral `example-forecast-scene` used by the docs and the smoke tests. All eight
+carry `{{COUNT}}`, so any of them can write 1-12 clips. `./data` is mounted
+read-only into the flow container and read per request — adding a file here
+shows up in the picker without a restart.
+
 
 ```yaml
 ---
