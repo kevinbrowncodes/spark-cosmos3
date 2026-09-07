@@ -73,7 +73,10 @@ def main(argv: list[str] | None = None) -> int:
 
         page.locator('[aria-label="Generate"]').click()
         tile = page.locator('[data-testid="tile"]').first
-        tile.wait_for(timeout=120_000)
+        # The tile appears only when POST /flow/generate returns, and the gateway upsamples
+        # with Gemma synchronously first — measured 102-145 s, and it retries up to 5 times on a
+        # bad reply. 120 s sat right on that edge and timed out with the job already running.
+        tile.wait_for(timeout=900_000)
         page.wait_for_timeout(3_000)
         page.screenshot(path=str(args.out / "02-submitted.png"))
         print("submitted:", json.dumps(jobs[-1]) if jobs else "(no /flow/generate response captured)")
