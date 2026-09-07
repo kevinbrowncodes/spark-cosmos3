@@ -150,7 +150,7 @@ def test_plan_review_approve_and_render_three_clips(client, app, mocks, env):
     mocks.get(f"{GW}/jobs/j1/content").mock(return_value=httpx.Response(200, content=MP4))
     assert "clip 1 done → queued" in tick(app)
     run = client.get(f"/agent/runs/{run_id}").json()
-    assert run["clips"][0]["media_id"] == "out:j1.mp4" and run["clip_index"] == 1 and run["step"] == "Caching clip 1"
+    assert run["clips"][0]["media_id"] == "out:j1.mp4" and run["clip_index"] == 1 and run["step"] == "Queued clip 2 of 3"
 
     # clip 2: extends clip 1's cached file
     gen.mock(return_value=job("queued", "j2", condition_frames=None))

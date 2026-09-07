@@ -55,7 +55,7 @@ def step_label(run: dict[str, Any]) -> str:
     if state == "review":
         return "Waiting for review"
     if state == "queued":
-        return "Queued" if n == 0 else f"Caching clip {n}"
+        return f"Queued clip {n + 1} of {total}"          # never "Caching": the cache is written before the run is queued (BUG_009)
     if state == "rendering":
         return f"Rendering clip {n + 1} of {total}"
     if state == "paused":

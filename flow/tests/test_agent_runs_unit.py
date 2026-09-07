@@ -31,8 +31,9 @@ def test_mem_available_gib(tmp_path):
     ({"state": "planning", "count": 6, "clip_index": 0}, "Writing 6 scripts…"),
     ({"state": "planning", "count": 1, "clip_index": 0}, "Writing 1 script…"),
     ({"state": "review", "count": 3, "clip_index": 0}, "Waiting for review"),
-    ({"state": "queued", "count": 3, "clip_index": 0}, "Queued"),
-    ({"state": "queued", "count": 3, "clip_index": 1}, "Caching clip 1"),
+    ({"state": "queued", "count": 3, "clip_index": 0}, "Queued clip 1 of 3"),
+    ({"state": "queued", "count": 3, "clip_index": 1}, "Queued clip 2 of 3"),        # between clips
+    ({"state": "queued", "count": 3, "clip_index": 2, "error": None}, "Queued clip 3 of 3"),  # after resume (BUG_009)
     ({"state": "rendering", "count": 3, "clip_index": 1}, "Rendering clip 2 of 3"),
     ({"state": "paused", "count": 3, "clip_index": 1, "error": "22 GiB available, need 30"}, "Paused: 22 GiB available, need 30"),
     ({"state": "paused", "count": 3, "clip_index": 1}, "Paused: gate"),
