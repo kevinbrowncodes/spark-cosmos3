@@ -1,0 +1,6 @@
+18:41:09 capabilities.agent: {'instructions': True, 'count': {'min': 1, 'max': 12, 'default': 3}, 'confirm': 'always', 'fields': ['size', 'length', 'steps', 'sound', 'upsample', 'reasoner']}
+18:41:09 skills via the protocol mirror: 8 ['cosmos-3-i2v-amg-scene', 'cosmos-3-i2v-helios-scene', 'cosmos-3-i2v-scene', 'cosmos-3-i2v-time-forecast-scene', 'cosmos-3-i2v-time-thirst-scene', 'cosmos-3-i2v-time-youtube-formula-scene', 'cosmos-3-i2v-weber-scene', 'example-forecast-scene']
+18:41:09 pill background off → rgba(218, 220, 224, 0.05) | on → rgb(255, 255, 255)
+18:41:09 picker lists 8 skills
+18:41:10 confirm defaults to Always; clips input value: 3
+18:41:10 page errors: [] — OK

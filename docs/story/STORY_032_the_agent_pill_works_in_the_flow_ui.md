@@ -10,7 +10,7 @@ in — so that the whole scene workflow lives in the browser.
 
 ## Acceptance Criteria
 
-- [ ] `FLOW_VERSION` bumped to the flow release that ships Agent mode; image rebuilt; `flow-conformance` passes including its agent checks
+- [x] `FLOW_VERSION` bumped to the flow release that ships Agent mode; image rebuilt; `flow-conformance` passes including its agent checks
 - [x] `capabilities.agent` is declared by the sidecar with the count range, default confirm mode and the run fields, exactly as flow `PROTOCOL.md` specifies after STORY-601
 - [x] The sidecar serves the protocol-shaped `/flow/agent/*` routes as a **mirror of `/agent/*`** — same handlers, no second implementation; the CLI keeps working unchanged
 - [x] In the browser: the pill fills white and the model chip hides; the instruction picker lists `data/prompts`; agent settings expose confirm Always/Never and the defaults; a run created in the UI appears as a batch of `count` tiles that fill in order, with the run's `step` shown; a run created by the CLI appears in the same place
