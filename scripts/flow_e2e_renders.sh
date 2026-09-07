@@ -41,6 +41,11 @@ phase_conformance() {   # STORY_025: the protocol path, exactly what the UI send
     | tee docs/evidence/STORY_025/conformance-generate.txt
 }
 
+phase_home() {          # STORY_028: the projects home page, no render (~30 s)
+  "$PY" flow/tests/e2e_ui_home.py --base "${UI_BASE:-http://192.168.1.33:8003}" \
+    | tee docs/evidence/story-028-home-page/verify-phase-a.txt
+}
+
 phase_ui() {            # STORY_025: a person's click path, in headless Chromium
   "$PY" flow/tests/e2e_ui_generate.py --still "$STILL" --out docs/evidence/STORY_025 --submit --timeout 3600 \
     ${UI_STATE:+--state "$UI_STATE"} \
@@ -69,9 +74,10 @@ phase_extend() {        # STORY_026: extend the newest cached clip at 480p, Leng
 gate
 case "$PHASE" in
   conformance) phase_conformance;;
+  home) phase_home;;
   ui) phase_ui;;
   extend) phase_extend;;
-  all) phase_conformance; gate; phase_ui; gate; phase_extend;;
-  *) echo "usage: $0 [conformance|ui|extend|all]" >&2; exit 64;;
+  all) phase_conformance; phase_home; gate; phase_ui; gate; phase_extend;;
+  *) echo "usage: $0 [conformance|home|ui|extend|all]" >&2; exit 64;;
 esac
 echo "done: $PHASE"
