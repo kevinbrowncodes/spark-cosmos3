@@ -16,7 +16,6 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from flow_protocol.media import kind_of
 from pydantic import BaseModel, Field
 
 log = logging.getLogger("flow")
@@ -256,98 +255,60 @@ class ScriptEdit(BaseModel):
     text: str = Field(min_length=1)
 
 
-def build_agent_router(gateway: Any, planner: Planner, prompts_dir: Path, executor: Any = None) -> APIRouter:
-    """`/agent/*` is this backend's own surface, deliberately outside the `/flow`
-    protocol prefix so a FLOW_VERSION bump can never collide with it."""
+def build_agent_router(bridge: Any) -> APIRouter:
+    """`/agent/*` — this backend's own surface, outside the `/flow` prefix so a
+    FLOW_VERSION bump can never collide with it. Same bridge as `/flow/agent/*`
+    (STORY_032): every rule lives in one place."""
+    from flow_protocol.gateway import UpstreamError
+
     router = APIRouter(prefix="/agent", tags=["agent"])
 
-    def _instruction(instruction_id: str, count: int) -> Instruction:
-        instruction = next((i for i in load_instructions(prompts_dir) if i.id == instruction_id), None)
-        if instruction is None:
-            raise HTTPException(404, f"unknown instruction {instruction_id!r}")
-        if instruction.count_locked and count != 1:
-            raise HTTPException(422, f"{instruction.id!r} writes a single clip; count must be 1")
-        return instruction
-
-    def _run(run_id: str) -> dict[str, Any]:
-        run = executor.store.load(run_id) if executor else None
-        if run is None:
-            raise HTTPException(404, f"unknown run {run_id!r}")
-        return run
-
-    def _script_index(run: dict[str, Any], n: int) -> int:
-        if not 1 <= n <= run["count"]:
-            raise HTTPException(404, f"run has {run['count']} scripts; no script {n}")
-        if run["state"] != "review":
-            raise HTTPException(409, f"scripts can only change while the run is in review (it is {run['state']})")
-        return n - 1
+    def guard(fn, *args):
+        try:
+            return fn(*args)
+        except UpstreamError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
 
     @router.get("/instructions")
     def instructions() -> list[dict[str, Any]]:
-        return [i.as_dict() for i in load_instructions(prompts_dir)]
+        return bridge.instructions()
 
     @router.post("/plan")
     async def plan(req: PlanRequest) -> dict[str, Any]:
-        instruction = _instruction(req.instruction, req.count)
-        path = gateway.media_path(req.reference_id)
-        if path is None:
-            raise HTTPException(404, f"unknown reference {req.reference_id!r}")
-        if kind_of(path) != "image":
-            raise HTTPException(422, "the seed must be an image for now; seeding from a clip arrives with the render chain")
         try:
-            return await planner.plan(instruction, req.count, path.read_bytes())
-        except PlanError as exc:
+            return await bridge.plan(req.reference_id, req.instruction, req.count)
+        except UpstreamError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
-
-    # --- runs (STORY_030) --------------------------------------------------------------
 
     @router.post("/runs", status_code=202)
     def create_run(req: RunRequest) -> dict[str, Any]:
-        instruction = _instruction(req.instruction, req.count)
-        if gateway.media_path(req.reference_id) is None:
-            raise HTTPException(404, f"unknown reference {req.reference_id!r}")
-        try:
-            return executor.create(req.reference_id, instruction, req.count, req.values, req.project_id, req.autostart)
-        except ValueError as exc:
-            raise HTTPException(422, str(exc)) from exc
+        return guard(bridge.create_run, req.reference_id, req.instruction, req.count, req.values, req.project_id, req.autostart)
 
     @router.get("/runs")
     def list_runs(project_id: str | None = None) -> list[dict[str, Any]]:
-        return executor.store.list(project_id) if executor else []
+        return bridge.list_runs(project_id)
 
     @router.get("/runs/{run_id}")
     def get_run(run_id: str) -> dict[str, Any]:
-        return _run(run_id)
+        return guard(bridge.run_or_404, run_id)
 
     @router.patch("/runs/{run_id}/scripts/{n}")
     def edit_script(run_id: str, n: int, edit: ScriptEdit) -> dict[str, Any]:
-        run = _run(run_id)
-        i = _script_index(run, n)
-        run["scripts"][i] = edit.text.strip()
-        run["clips"][i]["script"] = run["scripts"][i]
-        return executor.store.save(run)
+        return guard(bridge.edit_script, run_id, n, edit.text)
 
     @router.post("/runs/{run_id}/scripts/{n}/rewrite")
     async def rewrite_script(run_id: str, n: int) -> dict[str, Any]:
-        run = _run(run_id)
-        _script_index(run, n)
         try:
-            return await executor.rewrite(run, n)
-        except PlanError as exc:
+            return await bridge.rewrite_script(run_id, n)
+        except UpstreamError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
 
     @router.post("/runs/{run_id}/approve")
     def approve(run_id: str) -> dict[str, Any]:
-        run = _run(run_id)
-        if run["state"] != "review":
-            raise HTTPException(409, f"only a run in review can be approved (it is {run['state']})")
-        return executor.approve(run)
+        return guard(bridge.approve, run_id)
 
     @router.post("/runs/{run_id}/resume")
     def resume(run_id: str) -> dict[str, Any]:
-        run = _run(run_id)
-        if run["state"] not in ("failed", "paused"):
-            raise HTTPException(409, f"only a failed or paused run can be resumed (it is {run['state']})")
-        return executor.resume(run)
+        return guard(bridge.resume, run_id)
 
     return router

@@ -21,6 +21,7 @@ from fastapi.staticfiles import StaticFiles
 from flow_protocol.router import build_router
 
 from flow.agent import Planner, build_agent_router
+from flow.agent_bridge import HAS_AGENT_PROTOCOL, AgentBridge, ProtocolAgent
 from flow.gateway import Cosmos3Gateway
 from flow.runs import Executor, RunStore
 
@@ -107,10 +108,19 @@ def build_app(env: Mapping[str, str] | None = None) -> FastAPI:
             if task:
                 task.cancel()
 
+    # STORY_032: one bridge behind /agent/* and, when flow-protocol knows Agent mode,
+    # the protocol's /flow/agent/* mirror. Attach before build_router reads capabilities.
+    bridge = AgentBridge(gateway, planner, executor, Path(cfg["PROMPTS_DIR"]))
+    if HAS_AGENT_PROTOCOL:
+        gateway.agent = ProtocolAgent(bridge)
+    else:
+        log.warning("flow-protocol without Agent mode: /flow/agent/* not mounted (bump FLOW_VERSION)")
+
     app = FastAPI(title=f"{gateway.capabilities().name} — Flow gateway", lifespan=lifespan)
     app.state.executor = executor
+    app.state.bridge = bridge
     app.include_router(build_router(gateway))
-    app.include_router(build_agent_router(gateway, planner, Path(cfg["PROMPTS_DIR"]), executor))
+    app.include_router(build_agent_router(bridge))
 
     ui = Path(cfg["FLOW_UI_DIR"])
     index = ui / "index.html"

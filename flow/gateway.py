@@ -13,6 +13,8 @@
 #   STORY_026  Extend: a video reference goes as `video=` + condition_seconds,
 #              reference_kinds gains "video", and the recycled 73-frame prefix
 #              is trimmed off the cached clip (raw kept in flow-outputs-raw/)
+#   STORY_032  implements FlowAgent by delegating to the AgentBridge attached by
+#              app.py, and declares capabilities.agent once it is attached
 """Reference gateway for spark-cosmos3 (NVIDIA Cosmos 3 Nano behind the
 cosmos3-gateway on :8002).
 
@@ -54,6 +56,8 @@ import httpx
 from flow_protocol.gateway import FlowGateway, UpstreamError
 from flow_protocol.media import MediaStore, kind_of
 from flow_protocol.models import Capabilities, GenerateRequest, Job, MediaAsset
+
+from flow.agent_bridge import AGENT_CAPABILITIES, HAS_AGENT_PROTOCOL, FlowAgent
 
 DEFAULT_SIZES = ["720x1280", "1280x720", "960x960", "480x832", "832x480"]
 FPS = 24
@@ -136,7 +140,7 @@ def _parse_size(size: str | None) -> tuple[int | None, int | None]:
         return None, None
 
 
-class Cosmos3Gateway(FlowGateway):
+class Cosmos3Gateway(FlowGateway, FlowAgent):  # type: ignore[misc]
     def __init__(
         self,
         base_url: str = "http://localhost:8002",
@@ -153,6 +157,8 @@ class Cosmos3Gateway(FlowGateway):
         # size + length remembered at submit; the status payload's `size` may
         # be snapped by the engine (720x1280 → 704x1280) and wins when present.
         self._meta_by_job: dict[str, dict[str, Any]] = {}
+        # STORY_032: app.py attaches a ProtocolAgent once the executor exists.
+        self.agent: Any = None
 
     def capabilities(self) -> Capabilities:
         default_size = "720x1280" if "720x1280" in self.sizes else self.sizes[0]
@@ -184,8 +190,40 @@ class Cosmos3Gateway(FlowGateway):
                         "80 min for a 10 s extend. Removing a tile does not stop a render."
                     )
                 },
+                # Agent mode (flow v1.1): declared only when the bridge is attached, so a
+                # sidecar built against an older flow-protocol simply has no pill.
+                "agent": AGENT_CAPABILITIES if (HAS_AGENT_PROTOCOL and self.agent is not None) else False,
             }
         )
+
+    # --- FlowAgent, by delegation (STORY_032) --------------------------------------
+
+    def instructions(self):
+        return self.agent.instructions()
+
+    async def plan(self, req):
+        return await self.agent.plan(req)
+
+    def create_run(self, req):
+        return self.agent.create_run(req)
+
+    def list_runs(self, project_id=None):
+        return self.agent.list_runs(project_id)
+
+    def run(self, run_id):
+        return self.agent.run(run_id)
+
+    def edit_script(self, run_id, n, text):
+        return self.agent.edit_script(run_id, n, text)
+
+    async def rewrite_script(self, run_id, n):
+        return await self.agent.rewrite_script(run_id, n)
+
+    def approve(self, run_id):
+        return self.agent.approve(run_id)
+
+    def resume(self, run_id):
+        return self.agent.resume(run_id)
 
     def generate(self, req: GenerateRequest) -> Job:
         ref = self.store.path(req.reference_id or "")

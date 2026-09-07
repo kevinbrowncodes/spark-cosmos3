@@ -52,6 +52,14 @@ runs=$(curl -fsS "$BASE/agent/runs") || fail "GET /agent/runs"
 echo "$runs" | python3 -c 'import json,sys; r=json.load(sys.stdin); assert isinstance(r, list), r; print(f"  {len(r)} run(s)")' || fail "agent runs shape"
 ok "GET /agent/runs → 200, valid array (STORY_030)"
 
+# STORY_032: the protocol mirror exists only once the pinned flow-protocol knows Agent mode.
+if echo "$caps" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("agent") else 1)'; then
+  curl -fsS "$BASE/flow/agent/instructions" >/dev/null || fail "GET /flow/agent/instructions (agent declared)"
+  ok "capabilities.agent declared and /flow/agent/* answers (STORY_032)"
+else
+  echo "! capabilities.agent not declared — flow-protocol in this image predates Agent mode (bump FLOW_VERSION)"
+fi
+
 label=$(docker inspect spark-cosmos3-flow:latest --format '{{ index .Config.Labels "git.sha" }}' 2>/dev/null || true)
 head=$(git rev-parse --short HEAD 2>/dev/null || true)
 if [ -n "$label" ] && [ "$label" = "$head" ]; then
