@@ -199,7 +199,7 @@ still measured over the total.
 
 ### Flow UI sidecar (`:8003`)
 
-The `flow` container (EPIC_002) hosts the Flow editor at `http://<spark>:8003/ui/`
+The `flow` container (EPIC_002) hosts the Flow editor at `http://spark-1.local:8003/flow/` (also `/ui/`; `/` redirects)
 and implements the [Flow Gateway Protocol v1](https://github.com/kevinbrowncodes/flow/blob/v0.1.0/protocol/PROTOCOL.md)
 under `/flow/*`. It is a pure client of this gateway: it only calls
 `POST /generate`, `GET /jobs/{id}` and `GET /jobs/{id}/content`, and never
@@ -213,6 +213,8 @@ the engine. Two rules worth knowing when reading its traffic:
   restart and `/jobs/{id}/content` then 404s. `duration_s` shown in the UI is
   the requested length, never this payload's unused `seconds` field.
 
+The served index page is patched in memory with a `crypto.randomUUID` shim (BUG_005 — the
+API is secure-context-only and the LAN is plain http); the bundle files are served untouched.
 Health: `GET :8003/flow/capabilities`. Conformance: `docker compose exec flow flow-conformance http://localhost:8003`.
 | DELETE | `/jobs/{id}` | delete the job record. ⚠️ does NOT stop in-flight GPU work — vLLM-Omni aborts are bookkeeping only; an orphaned render runs to completion and blocks the queue |
 | DELETE | `/jobs/{id}?hard=true` | **hard stop**: deletes the record AND, if this job is the active render, restarts the engine via the sidecar to actually reclaim the GPU. Costs ~3.5 min model reload and wipes all queued job records. Response: `{"hard": true, "engine_restarting": bool, "engine_down_confirmed": bool}` — the gateway waits (≤30 s) for the engine to actually go down before returning, so `engine_down_confirmed: true` means the subsequent `GET /health` → `cosmos: true` is a real ready signal (not the pre-restart container still answering). Poll `/health` until `cosmos: true` before resubmitting |

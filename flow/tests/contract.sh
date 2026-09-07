@@ -22,10 +22,16 @@ assert [o["value"] for o in fields["count"]["options"]] == [1], fields["count"]
 PY2
 ok "capabilities: length 5/8/10 s (role duration), count [1], no frames, reference_kinds image+video"
 
-code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE/ui/")
-[ "$code" = 200 ] || fail "GET /ui/ → $code"
-curl -sI "$BASE/ui/" | grep -qi '^content-type: text/html' || fail "GET /ui/ is not text/html"
-ok "GET /ui/ → 200 text/html"
+for path in /flow/ /ui/; do
+  code=$(curl -s -o /dev/null -w '%{http_code}' "$BASE$path")
+  [ "$code" = 200 ] || fail "GET $path → $code"
+  curl -sI "$BASE$path" | grep -qi '^content-type: text/html' || fail "GET $path is not text/html"
+  curl -s "$BASE$path" | grep -q 'randomUUID=function' || fail "GET $path lacks the crypto.randomUUID shim (BUG_005)"
+  ok "GET $path → 200 text/html, shim present"
+done
+loc=$(curl -s -o /dev/null -w '%{redirect_url}' "$BASE/")
+[[ "$loc" == */flow/ ]] || fail "GET / does not redirect to /flow/ (got '$loc')"
+ok "GET / → /flow/"
 
 resp=$(curl -s -w '\n%{http_code}' "$BASE/flow/jobs/does-not-exist")
 [ "${resp##*$'\n'}" = 404 ] || fail "unknown job → ${resp##*$'\n'}"

@@ -113,12 +113,14 @@ From the Cosmos Technical Report, Table 21 (Cosmos3-Nano audio-visual):
 ## Flow UI
 
 A browser front end for this box, served by the `flow` sidecar on **:8003**
-(`http://<spark>:8003/ui/`). It implements the
+(**`http://spark-1.local:8003/flow/`** from any machine on the LAN; `/ui/` also works). It implements the
 [Flow Gateway Protocol](https://github.com/kevinbrowncodes/flow/blob/v0.1.0/protocol/PROTOCOL.md)
 and only ever calls the gateway's existing `/generate`, `/jobs/{id}` and
 `/jobs/{id}/content` — `gateway/server.py` is untouched. Uploads and cached
 finished clips live in `FLOW_MEDIA_DIR` (default `~/Documents/flow-media`).
 The container runs as root, so files there are root-owned; prune with `sudo`.
+The served index page carries a small `crypto.randomUUID` shim (BUG_005): browsers only
+expose it on https/localhost, and the LAN is plain http.
 Health check: `curl localhost:8003/flow/capabilities`.
 Field mapping and caching rules: `docs/api.md` → *Flow UI sidecar*.
 

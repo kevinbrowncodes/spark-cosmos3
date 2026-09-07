@@ -14,11 +14,32 @@ from collections.abc import Mapping
 from pathlib import Path
 
 from fastapi import FastAPI
-from flow_protocol.router import create_app
+from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
+from flow_protocol.router import build_router
 
 from flow.gateway import Cosmos3Gateway
 
 log = logging.getLogger("flow")
+
+# Where the UI is served: /flow is the address people use (STORY_027), /ui is
+# the upstream convention. The API lives under /flow/* and is registered first,
+# so its paths always win over the static mount.
+UI_PATHS = ("/flow", "/ui")
+
+# BUG_005: browsers expose crypto.randomUUID only in secure contexts (https or
+# localhost) and flow v0.1.0 calls it unguarded (contract.js:266). The LAN uses
+# plain http, so the served index page gets a polyfill built on
+# getRandomValues, which insecure contexts do have. Injected in memory at
+# serve time — the pinned bundle on disk is untouched, and this becomes a
+# no-op the moment upstream guards the call.
+UUID_SHIM = (
+    "<script>(function(){var c=globalThis.crypto;if(c&&typeof c.randomUUID===\"function\")return;"
+    "if(!c){c={};globalThis.crypto=c;}c.randomUUID=function(){var b=new Uint8Array(16);"
+    "if(typeof c.getRandomValues===\"function\"){c.getRandomValues(b);}else{for(var i=0;i<16;i++){b[i]=Math.random()*256|0;}}"
+    "b[6]=(b[6]&15)|64;b[8]=(b[8]&63)|128;var h=\"\";for(var j=0;j<16;j++){h+=(b[j]<16?\"0\":\"\")+b[j].toString(16);}"
+    "return h.slice(0,8)+\"-\"+h.slice(8,12)+\"-\"+h.slice(12,16)+\"-\"+h.slice(16,20)+\"-\"+h.slice(20);};})();</script>"
+)
 
 DEFAULTS: dict[str, str] = {
     # Compose service name, not localhost: the sidecar runs in its own container.
@@ -47,9 +68,34 @@ def build_gateway(cfg: Mapping[str, str]) -> Cosmos3Gateway:
     )
 
 
+def inject_shim(html: str) -> str:
+    """The shim goes first in <head>, ahead of the bundle's module script."""
+    if UUID_SHIM in html:
+        return html
+    return html.replace("<head>", "<head>" + UUID_SHIM, 1) if "<head>" in html else UUID_SHIM + html
+
+
 def build_app(env: Mapping[str, str] | None = None) -> FastAPI:
     cfg = settings(env)
+    gateway = build_gateway(cfg)
+    app = FastAPI(title=f"{gateway.capabilities().name} — Flow gateway")
+    app.include_router(build_router(gateway))
+
     ui = Path(cfg["FLOW_UI_DIR"])
-    if not ui.is_dir():
+    index = ui / "index.html"
+    if not index.is_file():
         log.warning("UI bundle %s not found; serving the protocol only", ui)
-    return create_app(build_gateway(cfg), ui_dir=ui if ui.is_dir() else None)
+        return app
+
+    page = inject_shim(index.read_text())
+
+    def serve_index() -> HTMLResponse:
+        return HTMLResponse(page)
+
+    app.add_api_route("/", lambda: RedirectResponse(UI_PATHS[0] + "/"), methods=["GET"], include_in_schema=False)
+    for path in UI_PATHS:
+        # The shimmed index must be registered before the mount that would
+        # otherwise serve the raw index.html for the same URL.
+        app.add_api_route(f"{path}/", serve_index, methods=["GET"], include_in_schema=False)
+        app.mount(path, StaticFiles(directory=str(ui), html=True), name=f"flow-ui{path.replace('/', '-')}")
+    return app

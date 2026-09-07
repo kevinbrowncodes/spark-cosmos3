@@ -22,6 +22,7 @@ from playwright.sync_api import sync_playwright
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--base", default="http://localhost:8003")
+    ap.add_argument("--ui-path", default="/flow/", help="where the UI is served (/flow/ or /ui/)")
     ap.add_argument("--still", type=Path, required=True)
     ap.add_argument("--prompt", required=True)
     ap.add_argument("--out", type=Path, default=Path("evidence"))
@@ -32,11 +33,14 @@ def main(argv: list[str] | None = None) -> int:
     args.out.mkdir(parents=True, exist_ok=True)
 
     jobs: list[dict] = []
+    errors: list[str] = []
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page(viewport={"width": 1440, "height": 900})
         page.on("response", lambda r: r.url.endswith("/flow/generate") and r.status == 202 and jobs.append(r.json()))
-        page.goto(f"{args.base}/ui/", wait_until="networkidle", timeout=60_000)
+        page.on("pageerror", lambda e: errors.append(str(e)))      # BUG_005 regression guard
+        page.goto(f"{args.base}{args.ui_path}", wait_until="networkidle", timeout=60_000)
+        print("secure context:", page.evaluate("window.isSecureContext"))
 
         page.locator('[aria-label="Add assets"], [title="Add assets"]').first.click()
         dialog = page.locator('[role="dialog"][aria-label="Add to Prompt"]')
@@ -53,6 +57,10 @@ def main(argv: list[str] | None = None) -> int:
         page.wait_for_timeout(500)
         page.screenshot(path=str(args.out / "01-composed.png"))
         print("composed: reference attached, prompt typed")
+        if errors:
+            print("PAGE ERRORS:", errors)
+            browser.close()
+            return 1
         if not args.submit:
             browser.close()
             return 0
