@@ -53,8 +53,18 @@ gate() {
 phase_conformance() {   # STORY_025: the protocol path, exactly what the UI sends
   mkdir -p docs/evidence/STORY_025
   cp -n "$STILL" "$MEDIA/$(basename "$STILL")" 2>/dev/null || true
-  docker compose exec -T flow flow-conformance "$BASE" --generate --reference "/media/$(basename "$STILL")" --timeout 3600 \
-    | tee docs/evidence/STORY_025/conformance-generate.txt
+  # This gateway takes 102-145 s to answer /generate (it upsamples first), and the CLI used a
+  # hardcoded 60 s per-request timeout until flow BUG-002 — so it failed while the job ran on.
+  # Prefer the container's copy once its pin carries --http-timeout; until then use the venv's,
+  # which tracks the flow checkout. Either way the service under test is the same :8003.
+  if docker compose exec -T flow flow-conformance --help 2>/dev/null | grep -q -- --http-timeout; then
+    docker compose exec -T flow flow-conformance "$BASE" --generate --reference "/media/$(basename "$STILL")" \
+      --timeout 3600 --http-timeout 600 | tee docs/evidence/STORY_025/conformance-generate.txt
+  else
+    echo "note: the pinned flow-conformance predates --http-timeout (BUG-002); using the venv's copy"
+    "$PY" -m flow_protocol.conformance http://localhost:8003 --generate --reference "$STILL" \
+      --timeout 3600 --http-timeout 600 | tee docs/evidence/STORY_025/conformance-generate.txt
+  fi
 }
 
 phase_home() {          # STORY_028: the projects home page, no render (~30 s)
