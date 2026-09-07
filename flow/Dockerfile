@@ -24,7 +24,8 @@ RUN mkdir -p /app/flow-ui \
     | tar -xz -C /app/flow-ui
 
 WORKDIR /app
-COPY flow/__init__.py flow/gateway.py flow/app.py ./flow/
+# Every module, not a hand-kept list: forgetting agent.py cost a build once (STORY_029).
+COPY flow/*.py ./flow/
 
 # The suite runs at build time with the coverage gate: a red suite never
 # becomes an image. The runtime stage copies the marker to force this stage.

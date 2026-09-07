@@ -38,6 +38,17 @@ resp=$(curl -s -w '\n%{http_code}' "$BASE/flow/jobs/does-not-exist")
 echo "$resp" | head -1 | grep -q '"detail"' || fail "404 body has no detail"
 ok "GET /flow/jobs/{unknown} → 404 with detail"
 
+instr=$(curl -fsS "$BASE/agent/instructions") || fail "GET /agent/instructions"
+INSTR="$instr" python3 - <<'PY2' || fail "agent instructions shape"
+import json, os
+rows = json.loads(os.environ["INSTR"])
+assert isinstance(rows, list), rows
+for r in rows:
+    assert set(r) == {"id", "name", "description", "count_locked"}, r
+print(f"  {len(rows)} skill(s): " + ", ".join(r["id"] for r in rows))
+PY2
+ok "GET /agent/instructions → 200, valid array (STORY_029)"
+
 label=$(docker inspect spark-cosmos3-flow:latest --format '{{ index .Config.Labels "git.sha" }}' 2>/dev/null || true)
 head=$(git rev-parse --short HEAD 2>/dev/null || true)
 if [ -n "$label" ] && [ "$label" = "$head" ]; then

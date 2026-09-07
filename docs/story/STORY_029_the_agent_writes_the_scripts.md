@@ -13,25 +13,25 @@ whole plan before a single GPU-minute is spent.
 
 ### The library
 
-- [ ] `GET /agent/instructions` lists every `data/prompts/*.md` as `{id, name, description, count_locked}` — `id`/`name` from frontmatter `name` (filename stem if absent), `description` from frontmatter (first sentence), `count_locked: true` when the body has no `{{COUNT}}`
-- [ ] The list reflects the directory on every call — dropping a file in takes effect on the next request, no restart
-- [ ] A file with no frontmatter still lists (stem as name, empty description); a non-`.md` file is ignored
+- [x] `GET /agent/instructions` lists every `data/prompts/*.md` as `{id, name, description, count_locked}` — `id`/`name` from frontmatter `name` (filename stem if absent), `description` from frontmatter (first sentence), `count_locked: true` when the body has no `{{COUNT}}`
+- [x] The list reflects the directory on every call — dropping a file in takes effect on the next request, no restart
+- [x] A file with no frontmatter still lists (stem as name, empty description); a non-`.md` file is ignored
 
 ### The plan
 
-- [ ] `POST /agent/plan` with `{reference_id, instruction, count}` returns `{instruction, count, scripts[], titles[], summary, attempts, model}`; `scripts` has **exactly `count`** entries
-- [ ] `count` defaults to 1, must be ≥ 1, and is **422** when > 1 for a count-locked skill; unknown `instruction` → **404**; unknown or non-image `reference_id` → **404 / 422** (a video seed arrives in STORY_030)
-- [ ] The skill body is sent as the **system** message with every `{{COUNT}}` replaced by the number; the seed image goes as a base64 `images` entry on the user turn; the request pins `options.num_ctx = 32768` and `keep_alive = 0` so Gemma is evicted after the reply (STORY_022's rule — it must not sit resident)
-- [ ] The reply is parsed by the epic's contract: `<<<SCRIPT n>>>…<<<END SCRIPT>>>` blocks in order, optional `<<<TITLES>>>` (one per line) and `<<<SUMMARY>>>`; a marker-less reply with `count = 1` is accepted as the single script
-- [ ] A wrong script count, an unparsable reply, or empty content is a **content failure**: retried immediately, up to **5 attempts**; transport failures (Ollama down, 5xx, timeout) retry the same way; after the last attempt → **502** whose `detail` names the reason (`"expected 6 scripts, got 1"`, `"ollama unreachable: …"`)
-- [ ] `attempts` in the response is the number of Gemma calls made; `model` is the model name used
-- [ ] Nothing is rendered, cached, or written to disk by this story — a plan is a pure response
+- [x] `POST /agent/plan` with `{reference_id, instruction, count}` returns `{instruction, count, scripts[], titles[], summary, attempts, model}`; `scripts` has **exactly `count`** entries
+- [x] `count` defaults to 1, must be ≥ 1, and is **422** when > 1 for a count-locked skill; unknown `instruction` → **404**; unknown or non-image `reference_id` → **404 / 422** (a video seed arrives in STORY_030)
+- [x] The skill body is sent as the **system** message with every `{{COUNT}}` replaced by the number; the seed image goes as a base64 `images` entry on the user turn; the request pins `options.num_ctx = 32768` and `keep_alive = 0` so Gemma is evicted after the reply (STORY_022's rule — it must not sit resident)
+- [x] The reply is parsed by the epic's contract: `<<<SCRIPT n>>>…<<<END SCRIPT>>>` blocks in order, optional `<<<TITLES>>>` (one per line) and `<<<SUMMARY>>>`; a marker-less reply with `count = 1` is accepted as the single script
+- [x] A wrong script count, an unparsable reply, or empty content is a **content failure**: retried immediately, up to **5 attempts**; transport failures (Ollama down, 5xx, timeout) retry the same way; after the last attempt → **502** whose `detail` names the reason (`"expected 6 scripts, got 1"`, `"ollama unreachable: …"`)
+- [x] `attempts` in the response is the number of Gemma calls made; `model` is the model name used
+- [x] Nothing is rendered, cached, or written to disk by this story — a plan is a pure response
 
 ### Plumbing
 
-- [ ] The `flow` service gets `extra_hosts: host.docker.internal:host-gateway`, `GEMMA_URL` (default `http://host.docker.internal:11434`), `GEMMA_MODEL` (default `gemma4:26b`) and `PROMPTS_DIR` (default `/data/prompts`); `.env.example` documents the first two beside the gateway's identical ones
-- [ ] `flow/tests/contract.sh` checks `GET /agent/instructions` → 200 with a valid array (empty allowed on a fresh box)
-- [ ] `gateway/server.py` untouched; `flow/` stays ≥ 95 % line coverage
+- [x] The `flow` service gets `extra_hosts: host.docker.internal:host-gateway`, `GEMMA_URL` (default `http://host.docker.internal:11434`), `GEMMA_MODEL` (default `gemma4:26b`) and `PROMPTS_DIR` (default `/data/prompts`); `.env.example` documents the first two beside the gateway's identical ones
+- [x] `flow/tests/contract.sh` checks `GET /agent/instructions` → 200 with a valid array (empty allowed on a fresh box)
+- [x] `gateway/server.py` untouched; `flow/` stays ≥ 95 % line coverage
 
 ## Technical Notes
 

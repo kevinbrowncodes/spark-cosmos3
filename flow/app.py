@@ -18,6 +18,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from flow_protocol.router import build_router
 
+from flow.agent import Planner, build_agent_router
 from flow.gateway import Cosmos3Gateway
 
 log = logging.getLogger("flow")
@@ -47,6 +48,10 @@ DEFAULTS: dict[str, str] = {
     "FLOW_MEDIA_DIR": "/media",
     "RESOLUTION_DICT": "/data/resolution_ratio_dict.json",
     "FLOW_UI_DIR": "/app/flow-ui",
+    # The agent's planner (STORY_029): the same Ollama/Gemma the gateway upsamples with.
+    "GEMMA_URL": "http://host.docker.internal:11434",
+    "GEMMA_MODEL": "gemma4:26b",
+    "PROMPTS_DIR": "/data/prompts",
 }
 
 
@@ -80,6 +85,7 @@ def build_app(env: Mapping[str, str] | None = None) -> FastAPI:
     gateway = build_gateway(cfg)
     app = FastAPI(title=f"{gateway.capabilities().name} — Flow gateway")
     app.include_router(build_router(gateway))
+    app.include_router(build_agent_router(gateway, Planner(cfg["GEMMA_URL"], cfg["GEMMA_MODEL"]), Path(cfg["PROMPTS_DIR"])))
 
     ui = Path(cfg["FLOW_UI_DIR"])
     index = ui / "index.html"

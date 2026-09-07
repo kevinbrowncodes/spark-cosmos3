@@ -103,6 +103,9 @@ services:
     image: spark-cosmos3-flow:latest
     container_name: cosmos3-flow
     restart: unless-stopped
+    # The agent's planner talks to Ollama on the HOST, like the gateway does (STORY_029).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "8003:8003"
     volumes:
@@ -110,6 +113,9 @@ services:
       - ./data:/data:ro                                        # resolution_ratio_dict.json
     environment:
       - COSMOS_GATEWAY_URL=http://gateway:8002
+      - GEMMA_URL=${GEMMA_URL:-http://host.docker.internal:11434}
+      - GEMMA_MODEL=${GEMMA_MODEL:-gemma4:26b}
+      - PROMPTS_DIR=/data/prompts
     depends_on:
       - gateway
 
