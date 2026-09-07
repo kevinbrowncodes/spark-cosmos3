@@ -59,6 +59,16 @@ services:
   # Canonical request layer — what clients should call. Applies the house
   # contract (neg.json, audio style, Table 21 params, correct field names)
   # and merges real progress from the sidecar into job status. See gateway/.
+    # BUG_004: an unrotated json-file log reached 60 MB and a sequential read stops part-way
+    # through it, so `docker logs --since` returns nothing while `--tail` still works.
+    # Rotation keeps any one file small enough that this cannot build up again. Applying it
+    # needs a recreate, not a restart.
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "3"
+
   gateway:
     build:
       context: ./gateway
