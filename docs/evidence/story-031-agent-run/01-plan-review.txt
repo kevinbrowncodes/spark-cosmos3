@@ -1,0 +1,29 @@
+run_e3bd921556a7  review     Waiting for review
+  💪 The Reveal  ·  example-forecast-scene × 3  ·  832x480 · 10 s  ·  seed in:519897eb-input_cap_guy.jpg
+  clip 1: pending  
+     [0:00-0:04] The right hand pulls the shirt further upward to fully reveal the abdomen.
+     [0:04-0:08] The right hand releases the fabric, allowing the shirt to fall back down over the waist.
+     [0:08-0:10] The man settles into a steady, upright position with both arms at his sides.
+     
+     the camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.
+  clip 2: pending  
+     [0:00-0:04] The left hand lifts the shaker cup toward the center of his chest.
+     [0:04-0:08] The right hand reaches up to adjust the brim of the cap.
+     [0:08-0:10] Both hands return to a resting position at his sides, still holding the cup.
+     
+     the camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.
+  clip 3: pending  
+     [0:00-0:04] The head turns to the left toward the background cafe area.
+     [0:04-0:08] The man shifts his weight from his right leg to his left leg.
+     [0:08-0:10] The head returns to a forward-facing position and remains still.
+     
+     the camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.
+
+The Mall Stroll (3 × 10 s)
+| Stage | Clip | What happens |
+| :--- | :--- | :--- |
+| The Reveal | 1 | Completes the shirt lift and lets it fall. |
+| Adjusting | 2 | Lifts the shaker cup and adjusts the cap brim. |
+| Settling | 3 | Scans the environment and shifts weight. |
+
+The man moves from an active, posing state into a relaxed, casual posture while interacting with his gear. He finishes the sequence by settling into a steady, natural standing position facing the camera.

@@ -16,7 +16,7 @@ to prose.
 - [x] **`aeon` is removed entirely**: its code path, `AEON_URL`, `_AEON_MODEL`, and the 503-on-unreachable branch
 - [x] **`opus` is retained but never default** — selectable via `reasoner=opus`, still reports `no_api_key` when no key is set, so it can be switched on later without new work
 - [x] `reasoner=aeon` returns **422 naming the removal**, rather than being silently ignored
-- [ ] The gateway reaches Ollama from inside its container (it currently binds loopback)
+- [x] The gateway reaches Ollama from inside its container (it currently binds loopback)
 - [x] Retries cover **content** failures, not just HTTP errors — a 200 response carrying malformed JSON, a schema violation, or empty content is retried
 - [x] Content retries are **immediate** (no 30 s backoff — there is no rate limit to back off from on a local model)
 - [x] Up to **5 attempts** on the gemma path; the existing 3-attempt / 30 s HTTP policy is unchanged for opus and aeon
