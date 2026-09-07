@@ -38,7 +38,7 @@ repo (`contract.js`): fall back to `getRandomValues` when `randomUUID` is absent
 - [x] The served index page (`/flow/`, `/ui/`) carries a tiny shim that defines `crypto.randomUUID` from `getRandomValues` when it is missing — applied by the sidecar at serve time, so it survives `FLOW_VERSION` bumps and disappears with no code change once upstream ships the fallback
 - [x] Headless Chromium against the **LAN address** (an insecure context) composes and attaches a reference with zero page errors
 - [x] `contract.sh` asserts the shim is present in the served page
-- [ ] Upstream issue/patch noted here once filed in `kevinbrowncodes/flow`
+- [x] Upstream issue/patch noted here once filed in `kevinbrowncodes/flow` — shipped in `v0.2.0`: `uuid()` in `src/adapter/contract.js` falls back to `getRandomValues`, confirmed in the published bundle and by driving the page with `crypto.randomUUID` absent
 
 ## Resolution
 
