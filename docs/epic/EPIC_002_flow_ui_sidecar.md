@@ -1,10 +1,10 @@
 # EPIC_002 — A browser UI for generating and extending clips
 
-**Status:** Code complete — STORY_023 and STORY_024 done; STORY_025 and STORY_026 landed and deployed with their
-**renders held** on the memory gate (2026-09-06: NVRM out-of-memory in the kernel log, 24 GiB available beside
-the resident engine, `spark-primary` vLLM running since 08-22 — see BUG_004 and the *Running the held renders*
-section at the end). Re-run `scripts/flow_e2e_renders.sh` when the box has ≥ 30 GiB free.
-**Stories:** STORY_023 → STORY_026
+**Status:** STORY_023–027 done. STORY_026's Extend path is proven on the box (2026-09-07: a
+three-clip chain rendered, each Extend reading the previous *trimmed* clip — see BUG_007, which that
+run found and closed). STORY_028 (the v0.2.0 upgrade: projects home page) is being verified now.
+The held renders from 2026-09-06 were unblocked by restarting the engine (BUG_010).
+**Stories:** STORY_023 → STORY_028
 **Related:** EPIC_001 (V2V), BACKLOG_002 (upstream Flow work this epic depends on for cancel/ETA/extend button)
 **Upstream:** https://github.com/kevinbrowncodes/flow — `protocol/PROTOCOL.md`, `protocol/python/README.md`, release `v0.1.0`
 
