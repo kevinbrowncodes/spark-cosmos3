@@ -22,7 +22,7 @@ say so.
 - [x] `http://spark-1.local:8003/flow/` shows the **projects home**: a 3-column
       grid, a fixed **New project** button, hover rename and delete
 - [x] **New project** creates and opens a project; the card then appears on the home page
-- [ ] A project that has rendered a clip shows that clip as its card thumbnail
+- [x] A project that has rendered a clip shows that clip as its card thumbnail
       (served by `GET /flow/media/{id}?type=THUMBNAIL` — the sidecar's ffmpeg poster path)
 - [x] The ⋮ **About** panel reports: Flow UI `0.2.0`, Protocol `v1`, Gateway
       `same origin`, Model `Cosmos 3 Nano`

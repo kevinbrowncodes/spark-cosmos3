@@ -8,7 +8,10 @@ Phase A (default) — no render, ~30 s:
 
 Phase B — `--phase B --state <storage state>`: the project that rendered a clip shows that
 clip as its card thumbnail. Pass the state file that `e2e_ui_generate.py --state` wrote, so
-this reads the same browser profile that did the render.
+this reads the same browser profile that did the render. **Give it the same `--base` that
+render used**: projects live in browser storage, which is per-origin, so a state written at
+`http://localhost:8003` shows no projects at `http://192.168.1.33:8003` and the grid never
+appears.
 
     python3 flow/tests/e2e_ui_home.py --base http://192.168.1.33:8003 --out docs/evidence/story-028-home-page
 """
@@ -50,6 +53,11 @@ def clear_projects(page) -> None:
 
 
 def phase_b(browser, ui: str, out: Path, state: Path) -> int:
+    origins = [o["origin"] for o in json.loads(state.read_text()).get("origins", [])]
+    base = ui.rsplit("/flow/", 1)[0].rstrip("/")
+    if origins and base not in origins:
+        raise SystemExit(f"--base {base} is not in the saved state ({origins}); browser storage is "
+                         "per-origin, so pass the same --base the render used")
     ctx = browser.new_context(viewport={"width": 1440, "height": 900}, storage_state=str(state))
     page = ctx.new_page()
     page.goto(ui)
