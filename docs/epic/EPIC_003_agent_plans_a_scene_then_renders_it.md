@@ -1,6 +1,6 @@
 # EPIC_003 — The agent plans a scene, then renders it
 
-**Status:** Code complete for STORY_029–031 (planner, durable runs + executor, CLI) — landed and deployed 2026-09-07. **E2E renders held on BUG_006** (Ollama binds loopback; a one-line sudo fix on the host) — once fixed: `scripts/flow_agent.sh run …` for the 3-clip 480p run. STORY_032 waits on the flow repo's EPIC-003 (Agent UI).
+**Status:** STORY_029–032 code complete, deployed 2026-09-07. BUG_006 worked around (user-space Ollama bridge). The real 3-clip run `run_e3bd921556a7` rendered clips 1–2, failed at clip 3 on **BUG_007** (trimmed clips read 24.1 fps — fixed, clip 2 re-trimmed), was resumed, and now sits **paused on BUG_010** (the engine keeps ~113 GB after a 720p clip; needs an idle-engine restart — Kevin's call). STORY_032 is verified in the browser against the real backend (a 1-clip UI run rendered to done; evidence under `docs/evidence/story-032-agent-ui/`) and waits only on the flow `v0.2.0` tag for its `FLOW_VERSION` bump. Flow-side: BUG-001 (Expand icon) fixed on `develop`, unpushed.
 **Stories:** STORY_029 → STORY_032 (this repo) · Agent UI in `kevinbrowncodes/flow` (its own epic, referenced below)
 **Related:** EPIC_001 (Extend), EPIC_002 (Flow UI), BACKLOG_003 (library promotion), BACKLOG_004 (project storage), flow `RECON-10-agent-mode.md`
 **Decided:** 2026-09-07 with Kevin — see *Decisions*
