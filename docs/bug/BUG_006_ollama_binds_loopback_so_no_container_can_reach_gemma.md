@@ -1,6 +1,6 @@
 # BUG_006 — Ollama binds loopback, so no container can reach Gemma
 
-**Status:** Open — needs a one-line host change with sudo
+**Status:** Worked around 2026-09-07 (user-space bridge, no sudo); the proper fix below still applies
 **Found:** 2026-09-07, STORY_029 E2E (the agent's planner could not connect); the gateway has the same problem
 **Affects:** `gateway` (`reasoner=gemma` upsampling — the default since STORY_022), `flow` (the agent's planner, EPIC_003)
 
@@ -62,6 +62,21 @@ other service on this box.
 - [ ] A default-settings `/generate` reports `prompt_source: "upsampled"` — STORY_022's open acceptance box can be ticked
 - [ ] `POST /agent/plan` returns scripts (STORY_029 E2E)
 
+## Workaround in place (2026-09-07, no sudo needed)
+
+A user-level systemd service, `~/.config/systemd/user/ollama-bridge.service`,
+runs `socat TCP-LISTEN:11435,bind=172.17.0.1,fork,reuseaddr TCP:127.0.0.1:11434`
+— it listens on the address `host.docker.internal` resolves to and forwards to
+Ollama's loopback socket. `loginctl enable-linger` succeeded for the user, so
+it survives logout and reboot. Both containers are pointed at it through
+`.env`: `GEMMA_URL=http://host.docker.internal:11435` (compose passes it to
+`gateway` and `flow`). Verified from inside both.
+
+Port **11435**, not 11434, on purpose: when the proper `OLLAMA_HOST=0.0.0.0`
+override is applied, Ollama takes 0.0.0.0:11434 without colliding with the
+bridge. After that, drop the `GEMMA_URL` line from `.env` and
+`systemctl --user disable --now ollama-bridge`.
+
 ## Resolution
 
-_(pending)_
+_(the proper fix — the systemd override — is still pending; the workaround unblocks everything today)_
