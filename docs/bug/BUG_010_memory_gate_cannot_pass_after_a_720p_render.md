@@ -1,6 +1,6 @@
 # BUG_010 — After a 720p render the engine keeps ~113 GB, so the agent's memory gate can never pass
 
-**Status:** Open
+**Status:** Resolved 2026-09-07 (mitigation documented; durable fix is BACKLOG_005)
 **Found:** 2026-09-07, STORY_032 E2E: the UI-driven 720x1280 clip finished and the resumed 3-clip run
 (`run_e3bd921556a7`, 832x480) immediately paused with `8 GiB available, need 22`
 **Affects:** `flow` executor gate (STORY_030, `AGENT_MIN_FREE_GIB`), `scripts/flow_agent.sh` and
@@ -56,4 +56,17 @@ queued job records.
 
 - [x] The measurements above and the restart recipe are recorded in `docs/spark-notes.md`
 - [x] A backlog item proposes the durable fix (executor asks the sidecar to restart an idle engine when the gate trips with no job running, or the engine runs with sleep mode) — no code from this ticket
-- [ ] `run_e3bd921556a7` resumed to `done` after the restart
+- [x] `run_e3bd921556a7` resumed to `done` after the restart
+
+## Resolution
+
+Documented in `docs/spark-notes.md` (rule 4 + the restart row) and CLAUDE.md §7.
+The restart recovered the box on 2026-09-07: 8.3 → 38.5 GiB available, and
+`run_e3bd921556a7` resumed and reached `done`.
+
+**Caveat found while doing it:** resuming ~12 s after issuing the restart made the
+executor submit into an engine that was still loading, and the run failed with
+`cosmos3 gateway: Internal Server Error` (the gateway's `httpx.ConnectError`).
+A second resume after `:8000/health` returned 200 rendered clip 3 normally. So the
+recipe is *restart, wait for health 200, then resume* — the executor has no
+engine-readiness check of its own, which is part of what BACKLOG_005 should fix.

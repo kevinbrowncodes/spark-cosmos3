@@ -17,7 +17,7 @@ a script that can be re-run rather than by hand.
 - [x] The script refuses to `run`/`approve` when the memory gate would fail (`free` below `AGENT_MIN_FREE_GIB`), printing the shortfall — the executor would only pause it anyway, but a person at a terminal should be told before they walk away
 - [x] `watch` exits 0 on `done`, 1 on `failed`, and prints the media ids of the finished clips
 - [x] README's Flow section documents the agent: what a skill is, where they live, the four-step flow (plan → review → approve → watch), and the zero-shot switch
-- [ ] **E2E on the box: a 3-clip run at 832×480 from `input_cap_guy.jpg` with `example-forecast-scene`**, watched to `done` (~72 min): three clean 10 s clips in the picker, `clips[*].media_id` resolvable, each clip's tile carrying its script and the gateway's upsampled prompt; the run JSON and `watch` transcript saved under `docs/evidence/story-031-agent-run/`
+- [x] **E2E on the box: a 3-clip run at 832×480 from `input_cap_guy.jpg` with `example-forecast-scene`**, watched to `done` (~72 min): three clean 10 s clips in the picker, `clips[*].media_id` resolvable, each clip's tile carrying its script and the gateway's upsampled prompt; the run JSON and `watch` transcript saved under `docs/evidence/story-031-agent-run/`
 - [ ] Also on the box: `plan` with a count-locked skill returns one script; a `rewrite` of one script changes only that script
 - [x] `flow/` stays ≥ 95 % line coverage; `gateway/server.py` untouched
 

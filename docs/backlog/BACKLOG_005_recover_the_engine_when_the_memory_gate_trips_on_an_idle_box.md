@@ -38,6 +38,14 @@ Pick one:
 - BUG_010 measurements; BUG_004 (the engine emits no logs, so "idle" must come from the gateway's job records, not `docker logs`)
 - Option 2 depends on a container.md update and a sleep/wakeup timing test
 
+## Also in scope: engine readiness
+
+Resuming a run while the engine is still loading fails it outright
+(`cosmos3 gateway: Internal Server Error` — the gateway cannot connect, BUG_010's
+resolution note). Whatever restarts the engine must also wait for `:8000/health`
+before submitting, and a submit that fails with a connection error should pause
+the run rather than fail it.
+
 ## Open questions
 
 - Does the engine's resident set also grow after long 480p V2V chains, or only after larger frames?

@@ -1,0 +1,74 @@
+{
+  "id": "run_e3bd921556a7",
+  "project_id": "e2e",
+  "title": "\ud83d\udcaa The Reveal",
+  "state": "done",
+  "clip_index": 3,
+  "clip_count": 3,
+  "instruction": "example-forecast-scene",
+  "count": 3,
+  "values": {
+    "size": "832x480",
+    "length": 10,
+    "steps": 35,
+    "sound": true,
+    "upsample": true,
+    "reasoner": "gemma",
+    "count": 1
+  },
+  "reference_id": "in:519897eb-input_cap_guy.jpg",
+  "seed_kind": "image",
+  "scripts": [
+    "[0:00-0:04] The right hand pulls the shirt further upward to fully reveal the abdomen.\n[0:04-0:08] The right hand releases the fabric, allowing the shirt to fall back down over the waist.\n[0:08-0:10] The man settles into a steady, upright position with both arms at his sides.\n\nthe camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.",
+    "[0:00-0:04] The left hand lifts the shaker cup toward the center of his chest.\n[0:04-0:08] The right hand reaches up to adjust the brim of the cap.\n[0:08-0:10] Both hands return to a resting position at his sides, still holding the cup.\n\nthe camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.",
+    "[0:00-0:04] The head turns to the left toward the background cafe area.\n[0:04-0:08] The man shifts his weight from his right leg to his left leg.\n[0:08-0:10] The head returns to a forward-facing position and remains still.\n\nthe camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech."
+  ],
+  "titles": [
+    "\ud83d\udcaa The Reveal",
+    "\ud83e\udde2 Cap Adjustment",
+    "\ud83e\udd64 Shaker Cup Moment",
+    "\ud83c\udfd9\ufe0f Mall Day Stroll",
+    "\ud83c\udfcb\ufe0f Post-Workout Pose",
+    "\u2728 Summer Vibes",
+    "\u2600\ufe0f Afternoon Sunlight",
+    "\ud83d\udc5f Urban Outing",
+    "\ud83e\udd33 Casual Snapshot",
+    "\ud83c\udf43 Relaxed Afternoon"
+  ],
+  "summary": "The Mall Stroll (3 \u00d7 10 s)\n| Stage | Clip | What happens |\n| :--- | :--- | :--- |\n| The Reveal | 1 | Completes the shirt lift and lets it fall. |\n| Adjusting | 2 | Lifts the shaker cup and adjusts the cap brim. |\n| Settling | 3 | Scans the environment and shifts weight. |\n\nThe man moves from an active, posing state into a relaxed, casual posture while interacting with his gear. He finishes the sequence by settling into a steady, natural standing position facing the camera.",
+  "clips": [
+    {
+      "n": 1,
+      "script": "[0:00-0:04] The right hand pulls the shirt further upward to fully reveal the abdomen.\n[0:04-0:08] The right hand releases the fabric, allowing the shirt to fall back down over the waist.\n[0:08-0:10] The man settles into a steady, upright position with both arms at his sides.\n\nthe camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.",
+      "job_id": "video_gen_d9de68630de94443b3523d9a3f96a6a8",
+      "media_id": "out:video_gen_d9de68630de94443b3523d9a3f96a6a8.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    },
+    {
+      "n": 2,
+      "script": "[0:00-0:04] The left hand lifts the shaker cup toward the center of his chest.\n[0:04-0:08] The right hand reaches up to adjust the brim of the cap.\n[0:08-0:10] Both hands return to a resting position at his sides, still holding the cup.\n\nthe camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.",
+      "job_id": "video_gen_8c95b6b36a404b22943f1472043e80d1",
+      "media_id": "out:video_gen_8c95b6b36a404b22943f1472043e80d1.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    },
+    {
+      "n": 3,
+      "script": "[0:00-0:04] The head turns to the left toward the background cafe area.\n[0:04-0:08] The man shifts his weight from his right leg to his left leg.\n[0:08-0:10] The head returns to a forward-facing position and remains still.\n\nthe camera stays completely fixed (no pan, tilt or zoom); if a person is present, the mouth stays closed and still; ambient environmental sound only, no voice or speech.",
+      "job_id": "video_gen_49d94bc8a627429f87b41499182cd228",
+      "media_id": "out:video_gen_49d94bc8a627429f87b41499182cd228.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    }
+  ],
+  "autostart": false,
+  "error": null,
+  "attempts": 1,
+  "created_at": 1788809424.6560571,
+  "updated_at": 1788819820.6376226,
+  "step": "Done"
+}

@@ -1,0 +1,4 @@
+2026-09-07 18:24:39 STORY_031 box 21 — MemAvailable 24 GiB
+
+## plan with the count-locked fixture skill (single-skill)
+planning 1 script(s) with single-skill from in:893079c5-input_cap_guy.jpg … (Gemma, ~2 min)

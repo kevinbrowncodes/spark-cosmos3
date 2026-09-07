@@ -1,6 +1,6 @@
 # BUG_007 — Trimmed Extend clips report 24.1 fps, so the gateway rejects them as the next source
 
-**Status:** Open
+**Status:** Resolved 2026-09-07
 **Found:** 2026-09-07, STORY_031 E2E (`run_e3bd921556a7`, the first real 3-clip agent run)
 **Affects:** `flow` (`trim_prefix`, STORY_026); every Extend chain longer than two clips, agent or manual
 
@@ -63,4 +63,12 @@ the last frame's *start*. Measured with the container's ffmpeg 7.1.5:
 
 - [x] `trim_prefix` passes `-r <fps>` on the output and the argv unit test asserts it
 - [x] A regression test trims a synthetic 24 fps clip with the **real** ffmpeg (host and the Docker test stage both have it) and asserts `avg_frame_rate == 24/1`, `nb_frames == source − condition_frames`, duration `== nb_frames/24`
-- [ ] `run_e3bd921556a7`'s clip 2 is re-trimmed from its kept raw, `ffprobe` shows `24/1`, and the run is resumed to `done` with a clean third clip
+- [x] `run_e3bd921556a7`'s clip 2 is re-trimmed from its kept raw, `ffprobe` shows `24/1`, and the run is resumed to `done` with a clean third clip
+
+## Resolution
+
+`trim_prefix` passes `-r <fps>`. Verified end to end on 2026-09-07: clip 2 was
+re-trimmed from its kept raw (313 frames → 240 at `24/1`, 10.000 s), the run was
+resumed, and **clip 3 rendered from that re-trimmed clip** — the exact hand-off
+that used to fail — landing at `24/1`, 10.000 s, 240 frames. Evidence:
+`docs/evidence/story-031-agent-run/05-run-final.json`.
