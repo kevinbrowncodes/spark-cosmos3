@@ -52,6 +52,17 @@ confirm no job is in flight first via `GET :8002/jobs/{id}` on the last job) and
 resume the run. This is a manual, human decision — the engine restart wipes
 queued job records.
 
+## Follow-up found 2026-09-07: the OOM half of the gate was noise
+
+`scripts/flow_e2e_renders.sh` also aborted on "any kernel OOM line", which turned out to be
+unusable. NVRM `Out of memory` lines are routine on this box: the engine emits a couple just
+loading its own 33 GB of weights, and more whenever Gemma loads beside it to upsample. Every
+render on 2026-09-07 completed with them present — three 832x480 clips and a 720x1280 one —
+so the count predicted nothing while making the gate unpassable in two different ways
+(first "any line today", then "any line since the engine started", which the engine's own
+startup satisfies). The count is now printed as context and **available memory is the only
+hard gate**.
+
 ## Acceptance criteria
 
 - [x] The measurements above and the restart recipe are recorded in `docs/spark-notes.md`

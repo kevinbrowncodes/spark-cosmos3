@@ -24,11 +24,17 @@ gate() {
   oom=$(journalctl -k --since "$since" 2>/dev/null | grep -ci "out of memory" || true)
   echo "memory gate: OOM window starts $since (engine start)"
   echo "memory gate: ${avail_gib} GiB available, ${oom} NVRM/OOM line(s) since then"
+  # NVRM "Out of memory" lines are advisory, not fatal. They appear routinely on this box —
+  # the engine emits a couple just loading its own 33 GB of weights, and more whenever Gemma
+  # loads beside it for an upsample — yet every render on 2026-09-07 completed with them
+  # present (three 832x480 clips and a 720x1280 one). Treating any line as an abort made the
+  # gate unpassable while telling us nothing. Available memory is the real gate.
+  [ "$oom" -gt 0 ] && echo "  note: NVRM pressure logged since the engine started; not blocking (see BUG_010)"
   # Same threshold the agent's executor uses on this box (.env AGENT_MIN_FREE_GIB, default 30):
   # a 720x1280 clip rendered cleanly from 22.9 GiB available on 2026-09-07 (BUG_010 notes).
   local min_gib; min_gib=$(sed -n 's/^AGENT_MIN_FREE_GIB=//p' .env 2>/dev/null | tail -1); min_gib=${AGENT_MIN_FREE_GIB:-${min_gib:-30}}
-  if [ "$avail_gib" -lt "$min_gib" ] || [ "$oom" -gt 0 ]; then
-    echo "ABORT: gate tripped (need ≥ ${min_gib} GiB and 0 OOM lines). Nothing submitted." >&2
+  if [ "$avail_gib" -lt "$min_gib" ]; then
+    echo "ABORT: gate tripped (need ≥ ${min_gib} GiB, have ${avail_gib}). Nothing submitted." >&2
     exit 2
   fi
   # `ls | head -1` gives ls a SIGPIPE once the directory is big enough, and `pipefail` turns
