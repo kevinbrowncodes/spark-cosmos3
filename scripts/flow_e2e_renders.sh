@@ -18,8 +18,11 @@ gate() {
   avail_gib=$(awk '/MemAvailable/ {printf "%d", $2/1048576}' /proc/meminfo)
   oom=$(journalctl -k --since today 2>/dev/null | grep -ci "out of memory" || true)
   echo "memory gate: ${avail_gib} GiB available, ${oom} NVRM/OOM line(s) today"
-  if [ "$avail_gib" -lt 30 ] || [ "$oom" -gt 0 ]; then
-    echo "ABORT: gate tripped (need ≥ 30 GiB and 0 OOM lines). Nothing submitted." >&2
+  # Same threshold the agent's executor uses on this box (.env AGENT_MIN_FREE_GIB, default 30):
+  # a 720x1280 clip rendered cleanly from 22.9 GiB available on 2026-09-07 (BUG_010 notes).
+  local min_gib; min_gib=$(sed -n 's/^AGENT_MIN_FREE_GIB=//p' .env 2>/dev/null | tail -1); min_gib=${AGENT_MIN_FREE_GIB:-${min_gib:-30}}
+  if [ "$avail_gib" -lt "$min_gib" ] || [ "$oom" -gt 0 ]; then
+    echo "ABORT: gate tripped (need ≥ ${min_gib} GiB and 0 OOM lines). Nothing submitted." >&2
     exit 2
   fi
   if [ -n "$(ls -t data/logs/jobs 2>/dev/null | head -1)" ]; then
