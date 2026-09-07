@@ -2,3 +2,14 @@
 
 ## plan with the count-locked fixture skill (single-skill)
 planning 1 script(s) with single-skill from in:893079c5-input_cap_guy.jpg … (Gemma, ~2 min)
+
+(1 attempt(s), gemma4:26b; nothing rendered)
+<<<SCRIPT 1>>>
+The man begins by pulling his black t-shirt upward with his right hand, further revealing his sculpted abdominal muscles while maintaining a bright, charismatic smile directed at the camera. As he lifts the fabric, a subtle wink follows his steady gaze, and a light breeze causes the edge of his shirt and the leaves of the nearby tree to flutter gently. In the background, the ambient motion of shoppers walking through the sunny outdoor plaza adds a sense of natural, lively movement to the scene.
+<<<END SCRIPT>>>
+
+script blocks in output: 1
+
+## 3-script run with scene-skill, then rewrite script 2
+run_03df4d4d9068  planning   Writing 3 scripts…
+  Untitled run  ·  scene-skill × 3  ·  832x480 · 10 s  ·  seed in:66ccb200-input_cap_guy.jpg

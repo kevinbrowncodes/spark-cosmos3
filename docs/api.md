@@ -200,7 +200,7 @@ still measured over the total.
 ### Flow UI sidecar (`:8003`)
 
 The `flow` container (EPIC_002) hosts the Flow editor at `http://spark-1.local:8003/flow/` (also `/ui/`; `/` redirects)
-and implements the [Flow Gateway Protocol v1](https://github.com/kevinbrowncodes/flow/blob/v0.1.0/protocol/PROTOCOL.md)
+and implements the [Flow Gateway Protocol v1](https://github.com/kevinbrowncodes/flow/blob/v0.2.0/protocol/PROTOCOL.md)
 under `/flow/*`. It is a pure client of this gateway: it only calls
 `POST /generate`, `GET /jobs/{id}` and `GET /jobs/{id}/content`, and never
 the engine. Two rules worth knowing when reading its traffic:
@@ -216,6 +216,41 @@ the engine. Two rules worth knowing when reading its traffic:
 The served index page is patched in memory with a `crypto.randomUUID` shim (BUG_005 — the
 API is secure-context-only and the LAN is plain http); the bundle files are served untouched.
 Health: `GET :8003/flow/capabilities`. Conformance: `docker compose exec flow flow-conformance http://localhost:8003`.
+
+#### Agent mode (EPIC_003)
+
+The sidecar also plans and drives multi-clip scenes. `GET /flow/capabilities` carries an
+`agent` object when it is available (`instructions`, `count` min/max/default, `confirm`,
+and the `fields` the agent may set); it is `false` when the pinned `FLOW_VERSION` predates
+Agent mode. The routes are mounted twice, on the same objects: **`/flow/agent/*`** (the
+protocol's own, pydantic-validated — what the UI calls) and **`/agent/*`** (the plain-dict
+mirror `scripts/flow_agent.sh` calls). Both read and write the same runs.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/flow/agent/instructions` | the skills in `PROMPTS_DIR` (`data/prompts/*.md`): `id`, `name`, `description`, `count_locked` — a skill without `{{COUNT}}` is locked to one clip |
+| POST | `/flow/agent/runs` | `{reference_id, instruction, count, values?, project_id?, autostart?}` → a run. `autostart: true` is zero-shot (no review); otherwise the run stops at `review` |
+| GET | `/flow/agent/runs` / `/flow/agent/runs/{id}` | list or fetch. `state` is `planning → review → queued → rendering → done \| failed \| paused`; `step` is a present-tense label; each clip carries `script`, `job_id`, `progress`, `media_id` |
+| PUT | `/flow/agent/runs/{id}/scripts/{n}` | replace script *n* (the UI's edit-on-blur) |
+| POST | `/flow/agent/runs/{id}/scripts/{n}/rewrite` | ask Gemma to rewrite only script *n* |
+| POST | `/flow/agent/runs/{id}/approve` | leave `review` → `queued` |
+| POST | `/flow/agent/runs/{id}/resume` | re-queue a `failed` or `paused` run's current clip (409 on any other state) |
+
+Three behaviours cost real debugging time and are worth knowing:
+
+- **One Gemma call per plan.** The seed image plus the skill (with `{{COUNT}}` substituted)
+  produce every script, the titles and the arc in one reply, parsed from `<<<SCRIPT n>>>`,
+  `<<<TITLES>>>` and `<<<SUMMARY>>>` markers. A wrong script count is a failed plan, retried
+  up to five times. `num_ctx: 32768` halves the latency (measured 219 s → 102 s) and
+  `keep_alive: 0` evicts the model afterwards so the render has the memory.
+- **Clip 1 is I2V from the seed; clips 2+ are V2V Extends of the previous clip**, so the
+  73 conditioning frames are trimmed off every finished Extend (raw kept in
+  `flow-outputs-raw/`). The trim must re-encode with `-r 24` or the result reads 24.1 fps
+  and this gateway rejects it as the next Extend's source — BUG_007.
+- **The executor gates on memory** (`AGENT_MIN_FREE_GIB`, default 30) and pauses instead of
+  submitting. After a 720p render the engine holds its peak until restarted, so that gate
+  can be unpassable on an otherwise idle box — BUG_010. It has no engine-readiness check:
+  resuming into a still-loading engine fails the run.
 | DELETE | `/jobs/{id}` | delete the job record. ⚠️ does NOT stop in-flight GPU work — vLLM-Omni aborts are bookkeeping only; an orphaned render runs to completion and blocks the queue |
 | DELETE | `/jobs/{id}?hard=true` | **hard stop**: deletes the record AND, if this job is the active render, restarts the engine via the sidecar to actually reclaim the GPU. Costs ~3.5 min model reload and wipes all queued job records. Response: `{"hard": true, "engine_restarting": bool, "engine_down_confirmed": bool}` — the gateway waits (≤30 s) for the engine to actually go down before returning, so `engine_down_confirmed: true` means the subsequent `GET /health` → `cosmos: true` is a real ready signal (not the pre-restart container still answering). Poll `/health` until `cosmos: true` before resubmitting |
 | GET | `/health` | `{"gateway": "ok", "cosmos": true}` |
