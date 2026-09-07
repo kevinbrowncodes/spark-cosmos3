@@ -16,30 +16,30 @@ say so.
 
 ## Acceptance Criteria
 
-- [ ] `FLOW_VERSION` is `v0.2.0` in `.env.example` (and `.env` on the box)
-- [ ] `docker compose build flow` pulls **both** the `flow-protocol` package and
+- [x] `FLOW_VERSION` is `v0.2.0` in `.env.example` (and `.env` on the box)
+- [x] `docker compose build flow` pulls **both** the `flow-protocol` package and
       `flow-ui-v0.2.0.tar.gz` at that tag — one pin, two artefacts, still true
-- [ ] `http://spark-1.local:8003/flow/` shows the **projects home**: a 3-column
+- [x] `http://spark-1.local:8003/flow/` shows the **projects home**: a 3-column
       grid, a fixed **New project** button, hover rename and delete
-- [ ] **New project** creates and opens a project; the card then appears on the home page
+- [x] **New project** creates and opens a project; the card then appears on the home page
 - [ ] A project that has rendered a clip shows that clip as its card thumbnail
       (served by `GET /flow/media/{id}?type=THUMBNAIL` — the sidecar's ffmpeg poster path)
-- [ ] The ⋮ **About** panel reports: Flow UI `0.2.0`, Protocol `v1`, Gateway
+- [x] The ⋮ **About** panel reports: Flow UI `0.2.0`, Protocol `v1`, Gateway
       `same origin`, Model `Cosmos 3 Nano`
-- [ ] Deleting a project removes it from the home page and **leaves the clips**
+- [x] Deleting a project removes it from the home page and **leaves the clips**
       in `~/Documents/flow-media/flow-outputs` and in the asset picker
-- [ ] `flow-conformance http://localhost:8003` still passes 15/15
-- [ ] `flow/tests/contract.sh` passes, extended to check `/flow/` serves the home
+- [x] `flow-conformance http://localhost:8003` still passes — **23/23** now, the extra checks being v0.2.0's agent-mode ones
+- [x] `flow/tests/contract.sh` passes, extended to check `/flow/` serves the home
       page (it currently only asserts 200 + `text/html`)
-- [ ] **`flow/gateway.py` and `flow/app.py` are unchanged** — proof the upgrade
+- [x] **`flow/gateway.py` and `flow/app.py` are unchanged** — proof the upgrade
       path holds. `git diff` on those two files across this story is empty
-- [ ] The `crypto.randomUUID` shim in `flow/app.py` is **kept but verified redundant**:
+- [x] The `crypto.randomUUID` shim in `flow/app.py` is **kept but verified redundant**:
       v0.2.0 fixes `uuid()` upstream, so the page must work with the shim removed
       too (checked once by hand, then the shim stays as belt-and-braces for the
       day someone pins an older `FLOW_VERSION`)
-- [ ] README's Flow section mentions the home page; BUG_005 gains a note that
+- [x] README's Flow section mentions the home page; BUG_005 gains a note that
       the upstream fix shipped in v0.2.0
-- [ ] `flow/` stays ≥ 95 % line coverage; `gateway/server.py` untouched
+- [x] `flow/` stays ≥ 95 % line coverage; `gateway/server.py` untouched
 
 ## Technical Notes
 

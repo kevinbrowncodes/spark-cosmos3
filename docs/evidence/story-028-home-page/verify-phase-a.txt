@@ -1,0 +1,10 @@
+18:38:26 capabilities.agent: {'instructions': True, 'count': {'min': 1, 'max': 12, 'default': 3}, 'confirm': 'always', 'fields': ['size', 'length', 'steps', 'sound', 'upsample', 'reasoner']}
+18:38:26 New project fixed-positioned: True
+18:38:26 project url: http://192.168.1.33:8003/flow/#/project/754e3de3-8847-4e8d-9009-e57c1249cc39
+18:38:26 grid columns: 3
+18:38:26 rename OK
+18:38:26 about: Flow UI | 0.2.0 | Protocol | v1 | Gateway | same origin | Model | Cosmos 3 Nano
+18:38:26 clips on disk before delete: 4
+18:38:27 asset picker media tiles after the delete: 18 | clips missing from the picker: []
+18:38:27 shim neutralised → typeof crypto.randomUUID: undefined | isSecureContext: False
+18:38:28 PHASE A OK

@@ -3,8 +3,8 @@
 Phase A (default) — no render, ~30 s:
   empty state → New project → the card appears → hover rename/delete → the ⋮ About rows →
   deleting a project leaves the clips on disk and in the asset picker → the page still works
-  with the sidecar's `crypto.randomUUID` shim stripped (v0.2.0 fixed `uuid()` upstream,
-  BUG_005) → Delete all.
+  with `crypto.randomUUID` absent, the sidecar's shim neutralised (v0.2.0 fixed `uuid()`
+  upstream, BUG_005) → Delete all.
 
 Phase B — `--phase B --state <storage state>`: the project that rendered a clip shows that
 clip as its card thumbnail. Pass the state file that `e2e_ui_generate.py --state` wrote, so
@@ -30,14 +30,15 @@ def log(*a) -> None:
     print(time.strftime("%H:%M:%S"), *a, flush=True)
 
 
-def strip_shim(route) -> None:
-    """Serve the index without the sidecar's injected randomUUID shim."""
-    resp = route.fetch()
-    body = resp.text()
-    stripped = re.sub(r"<script>[^<]*randomUUID=function[^<]*</script>", "", body)
-    assert stripped != body, "no shim in the served index — nothing to strip"
-    route.fulfill(response=resp, body=stripped,
-                  headers={**resp.headers, "content-length": str(len(stripped.encode()))})
+# Neutralise the sidecar's shim in the page instead of rewriting the document: fulfilling the
+# index makes Chromium treat the bundle's `crossorigin` script and stylesheet as cross-origin
+# from a non-secure context and block them, which looks like a broken bundle but is the test's
+# own fault. A non-writable undefined property makes the shim's assignment a silent no-op, so
+# the page sees exactly what a plain-http browser sees natively.
+NEUTRALISE_SHIM = """
+Object.defineProperty(globalThis.crypto, 'randomUUID',
+  { value: undefined, writable: false, configurable: false });
+"""
 
 
 def clear_projects(page) -> None:
@@ -112,7 +113,11 @@ def phase_a(browser, base: str, ui: str, out: Path, outputs: Path) -> int:
 
     # The About rows render inside the ⋮ popover, above "Delete all projects…"
     page.get_by_role("button", name="More options").click()
-    about = page.locator("div").filter(has_text=re.compile(r"^Flow UI")).last.inner_text()
+    # the deepest div carrying all four rows — matching one row only ("Flow UI\n0.2.0") is the trap
+    about = (page.locator("div")
+             .filter(has_text=re.compile(r"Flow UI"))
+             .filter(has_text=re.compile(r"Protocol"))
+             .filter(has_text=re.compile(r"Model")).last.inner_text())
     log("about:", " | ".join(l for l in about.splitlines() if l.strip())[:300])
     for needle in ("Flow UI", "0.2.0", "Protocol", "v1", "same origin", "Cosmos 3 Nano"):
         assert needle in about, f"About lacks {needle!r}: {about!r}"
@@ -133,29 +138,34 @@ def phase_a(browser, base: str, ui: str, out: Path, outputs: Path) -> int:
     page.get_by_role("button", name="New project").click()
     page.wait_for_selector("[data-testid=composer]")
     page.get_by_role("button", name="Add assets").click()
-    tiles = page.get_by_role("dialog", name="Add to Prompt").locator("img").count()
-    log("asset picker media tiles after the delete:", tiles)
-    assert tiles >= 1
+    picker = page.get_by_role("dialog", name="Add to Prompt")
+    expect(picker.locator("img").first).to_be_visible(timeout=20_000)   # the listing is fetched, not instant
+    tiles = picker.locator("img").count()
+    listed = picker.inner_text()
+    missing = [name for name in before if name not in listed]
+    log("asset picker media tiles after the delete:", tiles, "| clips missing from the picker:", missing)
+    assert tiles >= len(before) and not missing, (tiles, missing)
     page.screenshot(path=str(out / "06-asset-picker-after-delete.png"))
     assert not errors, errors
     ctx.close()
 
-    # BUG_005: v0.2.0 fixed uuid() upstream, so the page must work with the shim removed
+    # BUG_005: v0.2.0 fixed uuid() upstream, so the page must work with no crypto.randomUUID at all
     ctx2 = browser.new_context(viewport={"width": 1440, "height": 900})
+    ctx2.add_init_script(NEUTRALISE_SHIM)
     page2 = ctx2.new_page()
     errors2: list[str] = []
     page2.on("pageerror", lambda e: errors2.append(str(e)))
-    page2.route(re.compile(r".*/flow/$"), strip_shim)
     page2.goto(ui)
     page2.get_by_role("button", name="New project").wait_for()    # fresh context: its own empty storage
-    log("shim stripped → typeof crypto.randomUUID:", page2.evaluate("typeof globalThis.crypto.randomUUID"),
+    assert page2.evaluate("typeof globalThis.crypto.randomUUID") == "undefined", "the shim survived neutralisation"
+    log("shim neutralised → typeof crypto.randomUUID:", page2.evaluate("typeof globalThis.crypto.randomUUID"),
         "| isSecureContext:", page2.evaluate("window.isSecureContext"))
     page2.get_by_role("button", name="New project").click()
     page2.wait_for_selector("[data-testid=composer]")
     page2.get_by_role("button", name="Add assets").click()
     expect(page2.get_by_role("dialog", name="Add to Prompt")).to_be_visible()
     assert not errors2, errors2
-    page2.screenshot(path=str(out / "07-no-shim-new-project-works.png"))
+    page2.screenshot(path=str(out / "07-no-randomuuid-new-project-works.png"))
 
     page2.goto(ui)
     page2.wait_for_selector("[data-testid=projects-grid]")

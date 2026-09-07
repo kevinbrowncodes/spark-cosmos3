@@ -16,8 +16,14 @@ PY=".venv/bin/python"
 gate() {
   local avail_gib oom
   avail_gib=$(awk '/MemAvailable/ {printf "%d", $2/1048576}' /proc/meminfo)
-  oom=$(journalctl -k --since today 2>/dev/null | grep -ci "out of memory" || true)
-  echo "memory gate: ${avail_gib} GiB available, ${oom} NVRM/OOM line(s) today"
+  # Count OOM lines since the ENGINE started, not "today": an OOM before the current engine
+  # incarnation describes a machine state that no longer exists, and one stale line would
+  # otherwise block every render for the rest of the day (seen 2026-09-07, BUG_010).
+  local since; since=$(docker inspect -f '{{.State.StartedAt}}' cosmos3-api 2>/dev/null || true)
+  since=$([ -n "$since" ] && date -d "$since" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo today)
+  oom=$(journalctl -k --since "$since" 2>/dev/null | grep -ci "out of memory" || true)
+  echo "memory gate: OOM window starts $since (engine start)"
+  echo "memory gate: ${avail_gib} GiB available, ${oom} NVRM/OOM line(s) since then"
   # Same threshold the agent's executor uses on this box (.env AGENT_MIN_FREE_GIB, default 30):
   # a 720x1280 clip rendered cleanly from 22.9 GiB available on 2026-09-07 (BUG_010 notes).
   local min_gib; min_gib=$(sed -n 's/^AGENT_MIN_FREE_GIB=//p' .env 2>/dev/null | tail -1); min_gib=${AGENT_MIN_FREE_GIB:-${min_gib:-30}}

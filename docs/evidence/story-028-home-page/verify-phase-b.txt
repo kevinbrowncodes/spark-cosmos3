@@ -1,0 +1,2 @@
+Traceback (most recent call last):
+FileNotFoundError: [Errno 2] No such file or directory: '/tmp/claude-1000/-home-kevinbrown-Documents-GitHub-kevinbrowncodes-spark-cosmos3/e52fef60-70f4-47ad-8f06-62e8c271505f/scratchpad/ui025_state.json'
