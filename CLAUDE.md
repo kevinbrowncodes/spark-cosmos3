@@ -18,15 +18,15 @@ See **Architecture** below for the full technical picture.
 ## 2. Repo Structure
 
 ```
-data/          canonical config (neg.json, audio.txt, story/)
-docs/          API reference, notes, technical report, bug/, backlog/, epic/
+data/          canonical config (neg.json, upsampler template/schema, resolution dict)
+docs/          API reference, notes, technical report, story/, epic/, bug/, backlog/
 gateway/       Python gateway service (server.py — the core of this repo)
 progress-sidecar/  log-parsing progress sidecar
 scripts/       sync_config.sh, download_models.sh
 docker-compose.yml
 ```
 
-`data/story/` holds all feature story files. `docs/bug/`, `docs/backlog/`, and `docs/epic/` hold bug tickets, backlog items, and epics.
+`docs/story/` holds all feature story files. `docs/bug/`, `docs/backlog/`, and `docs/epic/` hold bug tickets, backlog items, and epics.
 
 ---
 
@@ -34,7 +34,7 @@ docker-compose.yml
 
 > **No story file → no code. No exceptions.**
 
-1. Every new feature **must have a story file** created in `data/story/` **before any code is written**.
+1. Every new feature **must have a story file** created in `docs/story/` **before any code is written**.
 2. Story files follow this format: user story sentence, **Acceptance Criteria** checklist, **Technical Notes**, **Testing Plan**, **Estimated Complexity**.
 3. Stories are implemented **one at a time**, with the story file used as the spec.
 4. **Never write code for a feature that does not yet have a story file.** If the user requests work without a story, draft the story file first, get approval, then implement.
@@ -67,7 +67,7 @@ docker-compose.yml
 - Backlog numbers are three-digit zero-padded: `BACKLOG_001`, `BACKLOG_002`, …
 - Backlog items should stay lightweight: summary, user impact, rough scope, dependencies, open questions, and priority
 - Do **not** implement directly from backlog items
-- Once an item is clear and prioritized, convert it to a `data/story/STORY_NNN_*.md` file before any code is written
+- Once an item is clear and prioritized, convert it to a `docs/story/STORY_NNN_*.md` file before any code is written
 - After promotion to story, remove or archive the backlog item and link to the new story
 
 ---
@@ -79,7 +79,7 @@ docker-compose.yml
 - Epic numbers are three-digit zero-padded: `EPIC_001`, `EPIC_002`, …
 - Each epic follows this format: **Goal**, **Scope** (including what is explicitly out of scope), **Shared Technical Constraints**, **Stories** table, **Known Limitations**, **Definition of Done**
 - The epic holds what is true for *every* story in it — shared arithmetic, budgets, constraints, and limitations. Implementation detail that belongs to one story stays in that story.
-- Stories remain in `data/story/` and are still implemented **one at a time**, lowest number first
+- Stories remain in `docs/story/` and are still implemented **one at a time**, lowest number first
 - An epic is not a substitute for a story — no code is written from an epic
 - Epics are never deleted; mark one `Done` when every story in it has closed
 
@@ -134,7 +134,6 @@ docker-compose.yml
   `./scripts/sync_config.sh` (use `--check` to detect drift).
   - `data/neg.json` — negative prompt; NVIDIA benchmark-tuned (Appendix
     B.6), never hand-edit.
-  - `data/story/` — feature story files (see Section 3).
 - Weights: 33 GB at `~/.cache/huggingface/hub/models--nvidia--Cosmos3-Nano/snapshots/main/`
   — note the **non-standard `snapshots/main`** layout (plain files, not a
   commit-hash snapshot). The serve command hardcodes this path.

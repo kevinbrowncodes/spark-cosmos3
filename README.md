@@ -126,6 +126,10 @@ scripts/export_secrets.sh   # (Spark 1) print HF_TOKEN + ANTHROPIC_API_KEY for t
 scripts/import_secrets.sh   # (Spark 2) pull secrets from Spark 1 via SSH into .env
 examples/generate.sh        # curl-based submit/poll/download client
 CLAUDE.md                   # operational context for Claude Code sessions
+docs/story/                 # feature stories — the spec for every change (STORY_NNN)
+docs/epic/                  # epics grouping related stories (EPIC_NNN)
+docs/bug/                   # bug tickets (BUG_NNN)
+docs/backlog/               # unprioritised ideas, promoted to stories before any code
 docs/api.md                 # full /v1/videos parameter reference (from OpenAPI + source)
 docs/responses.md           # real captured API payloads
 docs/spark-notes.md         # GB10 unified-memory quirks and runbook

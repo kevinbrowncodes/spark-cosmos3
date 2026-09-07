@@ -1,5 +1,7 @@
 # EPIC 001 — Vendor NVIDIA's Official Upsampler Recipe into the Gateway
 
+**Status:** Done — stories 003–008 shipped. Relocated from `data/epic/` on 2026-09-06; numbered 000 so it precedes EPIC_001 (V2V) without colliding.
+
 **Decision:** keep the hand-rolled gateway upsampler (do **not** add `cosmos-framework` as a
 dependency on the ARM64 gateway container). Instead, *vendor* the two data files and *transcribe*
 the small functions that the framework uses, so the gateway stays minimal while being byte-faithful
