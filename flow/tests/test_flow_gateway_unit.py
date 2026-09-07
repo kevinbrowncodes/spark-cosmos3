@@ -84,8 +84,12 @@ def test_capabilities_shape(gw):
     mode = caps.mode("video")
     assert mode is not None
     assert mode.field("size").default == "720x1280"
-    assert mode.by_role("count") is not None
-    assert "Cosmos 3 Nano" in caps.strings.footer
+    assert mode.field("frames") is None
+    length = mode.by_role("duration")
+    assert length is not None and length.key == "length" and length.default == 8
+    assert [o.value for o in length.options] == [5, 8, 10] and length.options[0].label == "5 s"
+    assert [o.value for o in mode.by_role("count").options] == [1]
+    assert "one clip at a time" in caps.strings.footer and "does not stop" in caps.strings.footer
 
 
 def test_capabilities_default_size_falls_back_to_first_option(tmp_path):
@@ -106,7 +110,7 @@ def test_capabilities_sizes_come_from_the_resolution_dict(tmp_path):
 def test_to_job_completed(gw):
     job = gw._to_job({"id": "v1", "status": "completed", "progress": 100, "size": "704x1280", "seconds": "7.9"})
     assert job.status == "done" and job.media_id == "out:v1.mp4"
-    assert (job.width, job.height, job.duration_s, job.progress) == (704, 1280, 7.9, 100.0)
+    assert (job.width, job.height, job.duration_s, job.progress) == (704, 1280, None, 100.0)
     assert job.error is None
 
 
@@ -130,10 +134,10 @@ def test_to_job_missing_or_blank_fields(gw):
     assert job.progress is None and job.duration_s is None and (job.width, job.height) == (None, None)
 
 
-def test_to_job_uses_the_size_remembered_at_submit(gw):
-    gw._sizes_by_job["v1"] = "832x480"
+def test_to_job_uses_the_size_and_length_remembered_at_submit(gw):
+    gw._meta_by_job["v1"] = {"size": "832x480", "length": 5.0}
     job = gw._to_job({"id": "v1", "status": "queued"})
-    assert (job.width, job.height) == (832, 480)
+    assert (job.width, job.height, job.duration_s) == (832, 480, 5.0)
 
 
 # --- generate guard -----------------------------------------------------------

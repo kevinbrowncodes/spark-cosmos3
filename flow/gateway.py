@@ -1,9 +1,13 @@
-# Copied verbatim from kevinbrowncodes/flow @ v0.1.0
+# Based on kevinbrowncodes/flow @ v0.1.0
 #   protocol/python/flow_protocol/examples/cosmos3.py
 #   sha256 ea380b93df2a285b75b3b314e01448f6c0e58bfd7a4ec71619dbc988dc86657d
-# The ONLY edits are the three relative imports, rewritten as absolute
-# `flow_protocol.*` imports so the file works outside that package (STORY_023).
-# Corrections against docs/api.md belong to STORY_024 — do not make them here.
+# Deviations from that file (re-diff on every FLOW_VERSION bump):
+#   STORY_023  relative imports → absolute `flow_protocol.*` imports
+#   STORY_024  `frames` field → `length` (seconds of new video) + frames_for();
+#              `count` options [1, 2] → [1]; duration_s from the remembered
+#              length / generated_frames, never the payload's unused `seconds`;
+#              non-image references refused; footer text; _sizes_by_job →
+#              _meta_by_job
 """Reference gateway for spark-cosmos3 (NVIDIA Cosmos 3 Nano behind the
 cosmos3-gateway on :8002).
 
@@ -19,7 +23,7 @@ Wire it into gateway/server.py:
 Mapping (see spark-cosmos3/docs/api.md and docs/responses.md):
   UI value        cosmos3 form field
   size            size
-  frames          frames
+  length          frames  (seconds of new video → frames_for(), STORY_024)
   steps           steps
   sound           sound
   upsample        upsample
@@ -40,10 +44,20 @@ from typing import Any
 import httpx
 
 from flow_protocol.gateway import FlowGateway, UpstreamError
-from flow_protocol.media import MediaStore
+from flow_protocol.media import MediaStore, kind_of
 from flow_protocol.models import Capabilities, GenerateRequest, Job, MediaAsset
 
 DEFAULT_SIZES = ["720x1280", "1280x720", "960x960", "480x832", "832x480"]
+FPS = 24
+# Seconds of NEW video the user asks for; the same control serves Generate
+# (from a still) and Extend (from a clip). Values must satisfy the gateway's
+# '2s'..'10s' duration schema after the frame maths below.
+LENGTHS = [5, 8, 10]
+DEFAULT_LENGTH = 8
+# Extend conditions on the source clip's last 3 s (EPIC_001 blind A/B,
+# 2026-07-28): gateway condition_window(3.0, 24) → 73 pixel frames.
+CONDITION_SECONDS = 3.0
+CONDITION_FRAMES = 73
 STATUS = {"queued": "queued", "in_progress": "running", "completed": "done", "failed": "failed", "cancelled": "failed", "error": "failed"}
 
 
@@ -55,6 +69,22 @@ def sizes_from_resolution_dict(path: Path, tiers: tuple[str, ...] = ("720", "480
         for entry in data.get(tier, {}).values():
             out.append(f"{entry['W']}x{entry['H']}")
     return out or DEFAULT_SIZES
+
+
+def snap4k1(n: int) -> int:
+    """Round up to the next 4k+1: the VAE folds 4 pixel frames into 1 latent."""
+    rem = (n - 1) % 4
+    return n if rem == 0 else n + (4 - rem)
+
+
+def frames_for(length_s: float, reference_kind: str) -> int:
+    """Total frames to request so that `length_s` seconds of NEW video come back.
+
+    image → snap4k1(L·24)            5→121  8→193  10→241
+    video → snap4k1(73 + L·24)       5→193  8→265  10→313  (prefix is recycled source)
+    """
+    new = round(float(length_s) * FPS)
+    return snap4k1(CONDITION_FRAMES + new if reference_kind == "video" else new)
 
 
 def _parse_size(size: str | None) -> tuple[int | None, int | None]:
@@ -79,7 +109,9 @@ class Cosmos3Gateway(FlowGateway):
         self.sizes = sizes or (sizes_from_resolution_dict(resolution_dict) if resolution_dict else DEFAULT_SIZES)
         self.client = httpx.Client(base_url=base_url, timeout=httpx.Timeout(60.0, read=600.0))
         self.name = name
-        self._sizes_by_job: dict[str, str] = {}
+        # size + length remembered at submit; the status payload's `size` may
+        # be snapped by the engine (720x1280 → 704x1280) and wins when present.
+        self._meta_by_job: dict[str, dict[str, Any]] = {}
 
     def capabilities(self) -> Capabilities:
         default_size = "720x1280" if "720x1280" in self.sizes else self.sizes[0]
@@ -91,19 +123,26 @@ class Cosmos3Gateway(FlowGateway):
                         "key": "video",
                         "fields": [
                             {"key": "size", "label": "Size", "type": "choice", "role": "size", "options": self.sizes, "default": default_size},
-                            {"key": "frames", "label": "Frames", "type": "choice", "options": [121, 189, 237, 300], "default": 189},
+                            {"key": "length", "label": "Length", "type": "choice", "role": "duration",
+                             "options": [{"value": n, "label": f"{n} s"} for n in LENGTHS], "default": DEFAULT_LENGTH},
                             {"key": "steps", "label": "Steps", "type": "choice", "options": [35, 50], "default": 35},
                             {"key": "sound", "label": "Sound", "type": "boolean", "default": True},
                             {"key": "upsample", "label": "Upsample prompt", "type": "boolean", "default": True},
                             {"key": "reasoner", "label": "Reasoner", "type": "choice", "options": ["gemma", "opus"], "default": "gemma"},
-                            {"key": "count", "label": "Outputs", "type": "choice", "role": "count", "options": [1, 2], "default": 1},
+                            # One at a time: the engine serialises jobs and the UI cannot cancel one.
+                            {"key": "count", "label": "Outputs", "type": "choice", "role": "count", "options": [1], "default": 1},
                         ],
                     }
                 ],
                 "reference": "required",  # the engine dispatches on the media it receives; there is no T2V path
                 "reference_kinds": ["image"],
                 "progress": "percent",
-                "strings": {"footer": f"{self.name} can make mistakes, so double check it"},
+                "strings": {
+                    "footer": (
+                        f"{self.name} renders one clip at a time — about 45 min at 720p, "
+                        "80 min for a 10 s extend. Removing a tile does not stop a render."
+                    )
+                },
             }
         )
 
@@ -111,11 +150,14 @@ class Cosmos3Gateway(FlowGateway):
         image = self.store.path(req.reference_id or "")
         if image is None:
             raise UpstreamError(f"reference {req.reference_id!r} not found", 404)
+        kind = kind_of(image)
+        if kind != "image":
+            raise UpstreamError("the reference must be an image; extending a clip is not available yet", 422)
         v = req.values
         form = {
             "prompt": req.prompt,
             "size": v["size"],
-            "frames": str(v["frames"]),
+            "frames": str(frames_for(v["length"], kind)),
             "steps": str(v["steps"]),
             "sound": "true" if v["sound"] else "false",
             "upsample": "true" if v["upsample"] else "false",
@@ -129,7 +171,7 @@ class Cosmos3Gateway(FlowGateway):
         if resp.status_code >= 400:
             raise UpstreamError(f"cosmos3 gateway: {resp.text[:400]}", 502 if resp.status_code >= 500 else 422)
         job = resp.json()
-        self._sizes_by_job[job["id"]] = job.get("size") or v["size"]
+        self._meta_by_job[job["id"]] = {"size": job.get("size") or v["size"], "length": float(v["length"])}
         return self._to_job(job)
 
     def job(self, job_id: str) -> Job | None:
@@ -145,11 +187,16 @@ class Cosmos3Gateway(FlowGateway):
 
     def _to_job(self, j: dict[str, Any]) -> Job:
         status = STATUS.get(str(j.get("status")), "failed")
-        w, h = _parse_size(j.get("size") or self._sizes_by_job.get(j["id"]))
+        meta = self._meta_by_job.get(j["id"], {})
+        w, h = _parse_size(j.get("size") or meta.get("size"))
         error = j.get("error")
         if isinstance(error, dict):
             error = error.get("message") or json.dumps(error)
-        seconds = j.get("seconds")
+        # docs/api.md: the payload's `seconds` is an unused default, never the
+        # clip length. Prefer what we asked for; fall back to the gateway's
+        # generated-frame count (V2V only); otherwise say nothing.
+        generated = j.get("generated_frames")
+        duration = meta.get("length") if meta.get("length") is not None else (float(generated) / FPS if generated else None)
         return Job(
             id=j["id"],
             status=status,  # type: ignore[arg-type]
@@ -157,7 +204,7 @@ class Cosmos3Gateway(FlowGateway):
             media_id=f"out:{j['id']}.mp4" if status == "done" else None,
             width=w,
             height=h,
-            duration_s=float(seconds) if seconds not in (None, "") else None,
+            duration_s=duration,
             error=str(error) if error else None,
         )
 

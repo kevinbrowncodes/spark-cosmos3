@@ -17,7 +17,7 @@ from flow_protocol.router import create_app
 from flow.gateway import Cosmos3Gateway
 
 GW = "http://fake-gateway:8002"
-VALUES = {"size": "720x1280", "frames": 189, "steps": 35, "sound": True, "upsample": True, "reasoner": "gemma", "count": 1}
+VALUES = {"size": "720x1280", "length": 8, "steps": 35, "sound": True, "upsample": True, "reasoner": "gemma", "count": 1}
 
 
 @pytest.fixture
@@ -91,7 +91,30 @@ def test_generate_forwards_the_form_and_maps_the_job(client, upstream):
     sent = route.calls.last.request.content
     for field in (b'name="image"', b'name="prompt"', b'name="size"', b'name="frames"', b'name="steps"', b'name="sound"', b'name="upsample"', b'name="reasoner"'):
         assert field in sent
-    assert b"a calm lake" in sent and b"\r\n189\r\n" in sent and b"\r\ntrue\r\n" in sent
+    assert b"a calm lake" in sent and b"\r\n193\r\n" in sent and b"\r\ntrue\r\n" in sent   # length 8 → 193 frames
+    assert job["duration_s"] == 8
+
+
+def test_generate_defaults_send_the_default_length(client, upstream):
+    rid = upload(client)
+    route = upstream.post("/generate").mock(return_value=httpx.Response(200, json={"id": "video_gen_2", "status": "queued"}))
+    assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "reference_id": rid}).status_code == 202
+    assert b"\r\n193\r\n" in route.calls.last.request.content
+
+
+@pytest.mark.parametrize("values", [{**VALUES, "length": 12}, {**VALUES, "count": 2}, {**VALUES, "frames": 189}])
+def test_generate_rejects_values_the_ui_cannot_offer(client, values):
+    rid = upload(client)
+    assert client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": values, "reference_id": rid}).status_code == 422
+
+
+@pytest.mark.skipif(not shutil.which("ffmpeg"), reason="ffmpeg is required to make the clip")
+def test_generate_refuses_a_video_reference_for_now(client, tmp_path):
+    clip = tmp_path / "clip.mp4"
+    subprocess.run(["ffmpeg", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=blue:s=64x64:d=1:r=24", "-pix_fmt", "yuv420p", str(clip)], check=True)
+    rid = upload(client, "clip.mp4", clip.read_bytes(), "video/mp4")
+    resp = client.post("/flow/generate", json={"mode": "video", "prompt": "x", "values": VALUES, "reference_id": rid})
+    assert resp.status_code == 422 and "must be an image" in resp.json()["detail"]
 
 
 def test_generate_gateway_4xx_becomes_422_with_its_detail(client, upstream):
@@ -127,7 +150,8 @@ def test_generate_validation_errors(client):
 def test_job_running(client, upstream):
     upstream.get("/jobs/video_gen_1").mock(return_value=httpx.Response(200, json={"id": "video_gen_1", "status": "in_progress", "progress": 42, "size": "704x1280", "seconds": "4"}))
     job = client.get("/flow/jobs/video_gen_1").json()
-    assert job["status"] == "running" and job["progress"] == 42 and job["media_id"] is None and job["duration_s"] == 4
+    assert job["status"] == "running" and job["progress"] == 42 and job["media_id"] is None
+    assert job["duration_s"] is None   # `seconds` is an unused default (docs/api.md), not a length
 
 
 def test_job_done_carries_media_id(client, upstream):
