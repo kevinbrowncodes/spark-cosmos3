@@ -39,9 +39,11 @@ docker-compose.yml
 3. Stories are implemented **one at a time**, with the story file used as the spec.
 4. **Never write code for a feature that does not yet have a story file.** If the user requests work without a story, draft the story file first, get approval, then implement.
 5. **Every story must include a Testing Plan section** that calls out which test layers apply:
-   - **Unit** — pytest tests for gateway logic: prompt assembly, field mapping, job state machine. Default: required for any new helper or transformation.
-   - **Contract** — curl/httpx tests against a running gateway verifying request/response shape and field names. Default: required for any new endpoint or field change.
-   - **Smoke** — `num_inference_steps=35` end-to-end generation through the full stack. Default: required only when the generation path itself changes.
+   - **Unit** — pytest, in-process, no network; helpers and transformations (prompt assembly, field mapping, job state machine). Default: required for any new helper or transformation.
+   - **Integration** — pytest `TestClient` against the service's HTTP surface with upstreams faked; every endpoint and error path. Default: required for any new endpoint or field change.
+   - **Contract** — curl/httpx against the *running* container; request/response shape and field names. Default: required for any new endpoint or field change.
+   - **E2E** — the full stack including one real render (`num_inference_steps=35`). Default: required when the generation path changes.
+   - **Coverage** — `pytest --cov=<package> --cov-fail-under=95`. Every package under test holds 95% line coverage; a story that lowers it is not Done.
    - If a layer is not applicable, the Testing Plan must explicitly say so and explain why. **"No tests needed" is not an acceptable answer without justification.**
 6. A story is not **Done** until its Testing Plan tests are written, passing locally, and the story's Acceptance Criteria checkboxes are all checked.
 
@@ -101,7 +103,7 @@ docker-compose.yml
   ```
 - **Before every commit, all steps must pass in order:**
   1. `./scripts/sync_config.sh --check` — confirm `data/` and runtime copies are in sync
-  2. `python -m pytest gateway/tests/` (if tests exist) — unit/contract tests
+  2. `python3 -m pytest --cov=flow --cov-fail-under=95` — unit/integration tests with the coverage gate (add `--cov=gateway` once the gateway is lifted to 95%; it measured 77% on 2026-09-06)
   3. Smoke curl: `curl -s localhost:8002/health` returns 200
   4. `git commit && git push origin main`
 - Always prefer CLI tools (`docker`, `curl`, `git`) over asking the user to do anything manually
