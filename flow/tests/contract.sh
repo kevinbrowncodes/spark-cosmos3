@@ -69,6 +69,24 @@ else
   echo "! capabilities.agent not declared — flow-protocol in this image predates Agent mode (bump FLOW_VERSION)"
 fi
 
+# STORY_033: the recorded size takes its shape from the seed. Creating a run starts a plan,
+# which loads Gemma — so this is opt-in via CONTRACT_AGENT_SIZE=1 and should be run when the
+# box is idle. The run is abandoned afterwards; it never reaches the GPU (it stops at review).
+if [ "${CONTRACT_AGENT_SIZE:-0}" = "1" ] && echo "$caps" | python3 -c 'import json,sys; sys.exit(0 if json.load(sys.stdin).get("agent") else 1)'; then
+  skill=$(curl -fsS "$BASE/flow/agent/instructions" | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["id"])')
+  seed=$(mktemp -u /tmp/contract-portrait-XXXX.png); ffmpeg -y -loglevel error -f lavfi -i testsrc=duration=1:size=480x832:rate=1 -frames:v 1 "$seed"
+  rid=$(curl -fsS -F "file=@$seed" "$BASE/flow/uploads" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+  run=$(curl -fsS -X POST "$BASE/flow/agent/runs" -H 'content-type: application/json' \
+        -d "{\"reference_id\": \"$rid\", \"instruction\": \"$skill\", \"count\": 1, \"values\": {\"size\": \"1280x720\"}}")
+  size=$(echo "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["values"]["size"])')
+  rid_run=$(echo "$run" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+  case "$size" in *x*) w=${size%x*}; h=${size#*x};; esac
+  [ "$h" -gt "$w" ] || fail "a portrait seed asked for at 1280x720 recorded $size, not a portrait size (STORY_033)"
+  ok "portrait seed + landscape request → $size (STORY_033)"
+  for _ in 1 2 3 4 5 6; do rm -f "${MEDIA:-$HOME/Documents/flow-media}/flow-runs/$rid_run.json"; sleep 5; done
+  rm -f "$seed"
+fi
+
 label=$(docker inspect spark-cosmos3-flow:latest --format '{{ index .Config.Labels "git.sha" }}' 2>/dev/null || true)
 head=$(git rev-parse --short HEAD 2>/dev/null || true)
 if [ -n "$label" ] && [ "$label" = "$head" ]; then

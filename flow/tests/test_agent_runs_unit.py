@@ -58,7 +58,8 @@ def test_run_store_roundtrip_ordering_and_atomicity(tmp_path):
 
 
 def test_default_values_protect_the_box():
-    assert DEFAULT_VALUES["size"] == "832x480" and DEFAULT_VALUES["length"] == 10 and DEFAULT_VALUES["upsample"] is True
+    # size is no longer a default — it comes from the seed's shape (STORY_033)
+    assert "size" not in DEFAULT_VALUES and DEFAULT_VALUES["length"] == 10 and DEFAULT_VALUES["upsample"] is True
 
 
 # --- parse_single -----------------------------------------------------------------------

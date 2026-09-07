@@ -90,7 +90,8 @@ def test_protocol_run_lifecycle_shares_the_bridge(client, app, mocks):
     assert r.status_code == 202, r.text
     run = r.json()
     rid_run = run["id"]
-    assert run["state"] == "planning" and run["clip_count"] == 2 and run["values"]["size"] == "832x480"
+    # the 8x8 fixture seed is square, so the square size is chosen (STORY_033)
+    assert run["state"] == "planning" and run["clip_count"] == 2 and run["values"]["size"] == "960x960"
     # the same run is visible under both prefixes
     assert client.get(f"/agent/runs/{rid_run}").json()["id"] == rid_run
     assert client.get("/flow/agent/runs", params={"project_id": "ui"}).json()[0]["id"] == rid_run

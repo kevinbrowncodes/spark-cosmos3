@@ -12,8 +12,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import math
 import secrets
+import shutil
+import subprocess
 import time
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -28,8 +32,65 @@ log = logging.getLogger("flow")
 STATES = ("planning", "review", "queued", "rendering", "done", "failed", "paused")
 # Extend conditions on the previous clip's last 3 s (EPIC_001 blind A/B, 2026-07-28).
 CONDITION_SECONDS = 3.0
-# EPIC_003: a 6-clip scene is ~2.5 h at 480p and ~7.6 h at 720p. Default protects the box.
-DEFAULT_VALUES: dict[str, Any] = {"size": "832x480", "length": 10, "steps": 35, "sound": True, "upsample": True, "reasoner": "gemma"}
+# EPIC_003: a 6-clip scene is ~2.5 h at 480p and ~7.6 h at 720p, so the agent asks for the
+# cheaper tier by default. Only the *pixel budget* of this size is used — the shape comes from
+# the seed (STORY_033), so the orientation written here is irrelevant.
+DEFAULT_TIER = "832x480"
+DEFAULT_VALUES: dict[str, Any] = {"length": 10, "steps": 35, "sound": True, "upsample": True, "reasoner": "gemma"}
+# Sizes within this log-aspect distance of the best match count as "the same shape", so the two
+# orientations of one shape compete on pixel count instead. ln(16/9) - ln(4/3) is 0.29, so 0.15
+# separates the five shapes the gateway offers without splitting an orientation pair.
+ASPECT_TOLERANCE = 0.15
+
+
+def probe_dimensions(path: Path | str) -> tuple[int, int] | None:
+    """Width and height of an image or a video, or None if it cannot be read."""
+    ffprobe = shutil.which("ffprobe")
+    if not ffprobe:
+        log.error("ffprobe not found; cannot measure %s", path)
+        return None
+    argv = [ffprobe, "-v", "error", "-select_streams", "v:0",
+            "-show_entries", "stream=width,height", "-of", "csv=p=0", str(path)]
+    try:
+        out = subprocess.run(argv, capture_output=True, timeout=60).stdout.decode(errors="replace")
+        w, h = (int(n) for n in out.strip().splitlines()[0].split(",")[:2])
+        return (w, h) if w > 0 and h > 0 else None
+    except (subprocess.SubprocessError, ValueError, IndexError) as exc:
+        log.warning("could not measure %s: %s", path, exc)
+        return None
+
+
+def _dims(size: str) -> tuple[int, int] | None:
+    try:
+        w, h = (int(n) for n in str(size).lower().split("x"))
+        return (w, h) if w > 0 and h > 0 else None
+    except (ValueError, AttributeError):
+        return None
+
+
+def size_for_seed(options: Sequence[str], requested: str | None, seed: tuple[int, int] | None) -> str | None:
+    """Pick the offered size shaped like the seed, at the pixel budget `requested` asked for.
+
+    Shape comes from the seed, resolution from the request (STORY_033): the engine conditions
+    on the seed as the first frame, so any other shape is rendered squashed — which is never
+    what a caller wants, even when they sent the size themselves. With no seed or no options
+    the request stands unchanged.
+    """
+    sized = [(o, d) for o in options if (d := _dims(o))]
+    if not sized or not seed:
+        return requested
+    target = math.log(seed[0] / seed[1])
+    budget = (lambda d: d[0] * d[1])(_dims(requested) or (0, 0)) if requested else 0
+    best = min(abs(math.log(w / h) - target) for _, (w, h) in sized)
+    close = [(o, w * h) for o, (w, h) in sized if abs(math.log(w / h) - target) <= best + ASPECT_TOLERANCE]
+    return min(close, key=lambda t: (abs(t[1] - budget), t[0]))[0]
+
+
+def size_options(caps: Any, mode: str = "video") -> list[str]:
+    """The size strings the gateway offers, or [] if it does not say."""
+    spec = caps.mode(mode) if hasattr(caps, "mode") else None
+    field = spec.field("size") if spec else None
+    return [str(o.value) for o in (field.options or [])] if field else []
 
 
 def new_run_id() -> str:
@@ -131,8 +192,17 @@ class Executor:
         kind = kind_of(seed)
         if kind not in ("image", "video"):
             raise ValueError("the seed must be an image or a video")
+        caps = self.gateway.capabilities()
         merged = {**DEFAULT_VALUES, **(values or {}), "count": 1}
-        req = normalise_request(self.gateway.capabilities(), GenerateRequest(mode="video", prompt="plan", values=merged, reference_id=reference_id))
+        # Shape from the seed, resolution from whatever was asked for (STORY_033 / BUG_012).
+        # A size the gateway does not offer is left alone so it still fails validation below,
+        # rather than being quietly turned into a valid one.
+        options, requested = size_options(caps), merged.get("size")
+        if requested is None or requested in options:
+            chosen = size_for_seed(options, requested or DEFAULT_TIER, probe_dimensions(seed))
+            if chosen:
+                merged["size"] = chosen
+        req = normalise_request(caps, GenerateRequest(mode="video", prompt="plan", values=merged, reference_id=reference_id))
         run = {
             "id": new_run_id(),
             "project_id": project_id,

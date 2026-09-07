@@ -83,7 +83,9 @@ def test_create_run_defaults_and_validation(client, mocks):
     assert r.status_code == 202, r.text
     run = r.json()
     assert run["state"] == "planning" and run["step"] == "Writing 3 scripts…" and run["title"] == "Untitled run"
-    assert run["values"]["size"] == "832x480" and run["values"]["length"] == 10 and run["values"]["count"] == 1
+    # tiny_png is 8x8, so the square size is the right shape for it (STORY_033); length and
+    # count still come from the agent's own defaults.
+    assert run["values"]["size"] == "960x960" and run["values"]["length"] == 10 and run["values"]["count"] == 1
     assert run["seed_kind"] == "image" and len(run["clips"]) == 3 and run["clip_count"] == 3
     assert client.get(f"/agent/runs/{run['id']}").json()["id"] == run["id"]
     assert [x["id"] for x in client.get("/agent/runs", params={"project_id": "p1"}).json()] == [run["id"]]
@@ -98,6 +100,31 @@ def test_create_run_defaults_and_validation(client, mocks):
 
 
 # --- the full chain --------------------------------------------------------------------------
+
+def test_the_recorded_size_follows_the_seeds_shape(client, mocks, monkeypatch):
+    """STORY_033 / BUG_012: the Flow UI always sends a size, so a landscape photo asked for at
+    the portrait default has to come back landscape — otherwise it renders squashed."""
+    import flow.runs as fr
+    rid = upload(client)
+
+    monkeypatch.setattr(fr, "probe_dimensions", lambda path: (1376, 768))    # a landscape photo
+    body = {"reference_id": rid, "instruction": "scene-skill", "count": 1, "values": {"size": "720x1280"}}
+    assert client.post("/agent/runs", json=body).json()["values"]["size"] == "1280x720"   # flipped, same tier
+
+    monkeypatch.setattr(fr, "probe_dimensions", lambda path: (768, 1376))    # a portrait photo
+    assert client.post("/agent/runs", json=body).json()["values"]["size"] == "720x1280"   # already right
+
+    body_no_size = {"reference_id": rid, "instruction": "scene-skill", "count": 1}
+    assert client.post("/agent/runs", json=body_no_size).json()["values"]["size"] == "480x832"  # cheap tier, portrait
+
+    monkeypatch.setattr(fr, "probe_dimensions", lambda path: None)           # unmeasurable
+    assert client.post("/agent/runs", json=body).json()["values"]["size"] == "720x1280"
+
+    # A size the gateway does not offer is still a 422 — reshaping must not launder it.
+    monkeypatch.setattr(fr, "probe_dimensions", lambda path: (1376, 768))
+    bad = {"reference_id": rid, "instruction": "scene-skill", "count": 1, "values": {"size": "999x999"}}
+    assert client.post("/agent/runs", json=bad).status_code == 422
+
 
 def test_plan_review_approve_and_render_three_clips(client, app, mocks, env):
     cfg, meminfo = env
