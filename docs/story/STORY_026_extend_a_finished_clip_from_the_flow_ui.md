@@ -18,7 +18,7 @@ leaving the browser.
 - [x] `condition_frames` is read from the gateway's `/generate` response (never assumed); a Generate job (`condition_frames: null`) is cached unchanged
 - [x] The extended tile reports `duration_s` = the Length asked for, and the served file's real duration matches it to within one frame
 - [x] If ffmpeg fails, the raw file is served unchanged and the failure is logged — never a lost clip
-- [ ] E2E: one extend rendered on the box at 832x480, Length 10, from a cached Generate output, then reviewed: the served clip is 10.0 s, starts where the source ended, and the seam is continuous (colour shift acceptable, replay is not)
+- [x] E2E: one extend rendered on the box at 832x480, Length 10, from a cached Generate output, then reviewed: the served clip is 10.0 s, starts where the source ended, and the seam is continuous (colour shift acceptable, replay is not) — `run_e3bd921556a7` clip 2, served 10.000 s / 240 frames from a 313-frame raw; the seam measured at 27.94 dB against the source's last frame versus 18.34 dB against the frame 73 back, so it continues rather than replays (`docs/evidence/STORY_026/seam-analysis.txt`)
 - [x] `flow-conformance http://localhost:8003` still passes; `contract.sh` asserts `reference_kinds`
 - [x] `flow/` stays ≥ 95 % line coverage; `gateway/server.py` untouched
 

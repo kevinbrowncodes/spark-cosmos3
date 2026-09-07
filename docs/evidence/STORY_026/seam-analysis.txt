@@ -1,0 +1,16 @@
+STORY_026 seam check — run_e3bd921556a7, clip 1 (Generate) → clip 2 (Extend), 832x480, Length 10
+Measured 2026-09-07 with ffmpeg's psnr filter on single extracted frames.
+
+  clip 2 frame 0  vs  clip 1 frame 240 (the true seam)          27.94 dB
+  clip 2 frame 0  vs  clip 1 frame 168 (a replay would sit here) 18.34 dB
+  clip 2 frame 0  vs  clip 1 frame 120 (unrelated baseline)      15.41 dB
+  clip 1 frame 240 vs clip 1 frame 168 (how different 3 s is)    18.32 dB
+
+Reading: clip 2 opens 9.6 dB closer to the source's LAST frame than to the frame 73 back,
+which is where the conditioning window would land if the 73-frame prefix had been replayed
+instead of trimmed. It is also far from an unrelated frame, so this is continuation, not a
+cut. The 18.34 dB figure matches the clip's own 3-second self-distance (18.32 dB), i.e. a
+replay is exactly as far away as any random 3-second gap — there is no replay.
+
+Durations: clip 1 served 10.042 s / 241 frames; clip 2 served 10.000 s / 240 frames from a
+313-frame raw (313 - 73 = 240). Side-by-side frames: seam-last-vs-first.png.
