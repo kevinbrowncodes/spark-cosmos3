@@ -1,1 +1,5 @@
 secure context: True
+composed: reference attached, prompt typed
+submitted: {"id": "video_gen_95480fff67924d2294e5854a6f0cd290", "status": "queued", "progress": 0.0, "media_id": null, "width": 720, "height": 1280, "duration_s": 8.0, "error": null}
+   15 s  tile: image 0%
+   30 s  tile: image 1%

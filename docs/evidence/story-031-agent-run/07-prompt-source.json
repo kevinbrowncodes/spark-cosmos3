@@ -1,0 +1,10 @@
+{
+  "id": "video_gen_95480fff67924d2294e5854a6f0cd290",
+  "status": "in_progress",
+  "prompt_source": "upsampled",
+  "size": "720x1280",
+  "num_frames": null,
+  "num_inference_steps": null,
+  "generate_sound": null,
+  "progress": 0
+}

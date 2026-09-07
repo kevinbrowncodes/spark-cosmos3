@@ -1,6 +1,6 @@
 # BUG_006 — Ollama binds loopback, so no container can reach Gemma
 
-**Status:** Worked around 2026-09-07 and verified end to end (user-space socat bridge on `172.17.0.1:11435`, no sudo needed); the proper fix below remains the tidier one
+**Status:** Resolved 2026-09-07 by a user-space socat bridge on `172.17.0.1:11435` (no sudo needed), verified end to end; the `systemctl edit ollama` fix below remains the tidier one and would let `GEMMA_URL` drop back to the default
 **Found:** 2026-09-07, STORY_029 E2E (the agent's planner could not connect); the gateway has the same problem
 **Affects:** `gateway` (`reasoner=gemma` upsampling — the default since STORY_022), `flow` (the agent's planner, EPIC_003)
 
@@ -59,7 +59,7 @@ other service on this box.
 - [x] `ss -ltn` shows Ollama on `0.0.0.0:11434` (or the bridge IP) — the bridge: `LISTEN 172.17.0.1:11435`
 - [x] `docker compose exec gateway python -c "import httpx; print(httpx.get('http://host.docker.internal:11434/api/version').json())"` prints a version — via the bridge port 11435: `{'version': '0.30.10'}`
 - [x] Same from `flow` — `{'version': '0.30.10'}`
-- [ ] A default-settings `/generate` reports `prompt_source: "upsampled"` — STORY_022's open acceptance box can be ticked
+- [x] A default-settings `/generate` reports `prompt_source: "upsampled"` — job `video_gen_95480fff679…` at the UI defaults (720x1280), captured live in `docs/evidence/story-031-agent-run/07-prompt-source.json`
 - [x] `POST /agent/plan` returns scripts (STORY_029 E2E) — every plan in STORY_031's runs, including the count-locked check
 
 ## Workaround in place (2026-09-07, no sudo needed)
