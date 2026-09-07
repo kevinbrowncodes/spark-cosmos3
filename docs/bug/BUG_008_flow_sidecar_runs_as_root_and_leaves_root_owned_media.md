@@ -1,6 +1,6 @@
 # BUG_008 — The Flow sidecar runs as root, so the media folder fills with root-owned files
 
-**Status:** Open
+**Status:** Resolved 2026-09-07
 **Found:** 2026-09-07, STORY_032 (driving the Agent UI from a host-run sidecar against the shared media dir)
 **Affects:** `flow` (`cosmos3-flow` writes `/media`); the gateway has the same habit with `data/logs/jobs/` (root-owned since 2026-06-26) — noted here, not fixed here
 
@@ -43,3 +43,13 @@ the entrypoint as uid 0 and bind mounts preserve the container's uid on the host
 - [x] `docker compose config` shows `user: 1000:1000` for `flow`; the redeployed container reports `id -u` = 1000
 - [x] After the repair, `ls -la ~/Documents/flow-media` shows only `kevinbrown` ownership and a host-run sidecar can create a run in the shared `flow-runs/`
 - [x] A new upload and a new cached clip created by the redeployed container are owned by `kevinbrown`
+
+## Resolution
+
+`docker-compose.yml` runs `cosmos3-flow` as `${FLOW_UID:-1000}:${FLOW_GID:-1000}`
+(documented in `.env.example` and the README); the media dir was repaired with the
+Docker `chown` one-liner above. Verified after redeploy: `docker exec cosmos3-flow id -u`
+→ 1000; a new upload (`aa6d1362-input_cap_guy.jpg`) and a re-trimmed cached clip are
+owned by `kevinbrown`; the host-run sidecar on :8006 creates runs in the shared
+`flow-runs/` (the STORY_032 browser drive). The gateway's root-owned
+`data/logs/jobs/` is the same pattern and is left for its own ticket.
