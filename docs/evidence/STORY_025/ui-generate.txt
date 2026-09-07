@@ -1,0 +1,2 @@
+secure context: True
+composed: reference attached, prompt typed

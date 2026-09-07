@@ -31,9 +31,13 @@ gate() {
     echo "ABORT: gate tripped (need ≥ ${min_gib} GiB and 0 OOM lines). Nothing submitted." >&2
     exit 2
   fi
-  if [ -n "$(ls -t data/logs/jobs 2>/dev/null | head -1)" ]; then
-    local last id st
-    last=$(ls -t data/logs/jobs | head -1); id=${last#*_}; id=${id%.json}
+  # `ls | head -1` gives ls a SIGPIPE once the directory is big enough, and `pipefail` turns
+  # that 141 into a silent `set -e` exit — the whole script vanished after the gate until
+  # this was found (2026-09-07). Read the newest entry without a pipe.
+  local last id st
+  last=$(set +o pipefail; ls -t data/logs/jobs 2>/dev/null | head -1)
+  if [ -n "$last" ]; then
+    id=${last#*_}; id=${id%.json}
     st=$(curl -s "localhost:8002/jobs/$id" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status","?"))' 2>/dev/null || echo unknown)
     echo "last gateway job $id: $st"
     case "$st" in queued|in_progress) echo "ABORT: a render is in flight." >&2; exit 2;; esac
@@ -48,11 +52,13 @@ phase_conformance() {   # STORY_025: the protocol path, exactly what the UI send
 }
 
 phase_home() {          # STORY_028: the projects home page, no render (~30 s)
+  mkdir -p docs/evidence/story-028-home-page
   "$PY" flow/tests/e2e_ui_home.py --base "${UI_BASE:-http://192.168.1.33:8003}" \
     | tee docs/evidence/story-028-home-page/verify-phase-a.txt
 }
 
 phase_ui() {            # STORY_025: a person's click path, in headless Chromium
+  mkdir -p docs/evidence/STORY_025          # `tee` cannot create it, and pipefail turns that into a silent exit
   "$PY" flow/tests/e2e_ui_generate.py --still "$STILL" --out docs/evidence/STORY_025 --submit --timeout 3600 \
     ${UI_STATE:+--state "$UI_STATE"} \
     --prompt "A man in a cap looks up from his work and grins as sunlight moves across the room." \
