@@ -208,6 +208,12 @@ the engine. Two rules worth knowing when reading its traffic:
 - **Length, not frames.** The UI offers 5 / 8 / 10 s of *new* video; the
   sidecar sends `frames` snapped to 4k+1 — 121 / 193 / 241 from a still, 193 /
   265 / 313 when extending a clip (73 conditioning frames = `condition_seconds=3.0`).
+- **`POST /flow/generate` blocks for as long as the upsample takes.** The gateway
+  upsamples the prompt with Gemma *before* it answers with a job id — measured 102-145 s,
+  and it retries a bad reply up to five times. The sidecar forwards that wait, so the UI
+  shows nothing at all between pressing Generate and the tile appearing. Anything driving
+  this endpoint needs a timeout in minutes, not seconds: a 120 s wait times out with the
+  job already running on the engine, which reads as a failed submit (BACKLOG_006).
 - **Finished clips are cached on the poll that reports `completed`** into
   `FLOW_MEDIA_DIR/flow-outputs/<id>.mp4`, because the engine forgets jobs on
   restart and `/jobs/{id}/content` then 404s. `duration_s` shown in the UI is
