@@ -1,0 +1,6 @@
+03:16:32 agent.shape_from_seed: True
+03:16:33 photo attached → chip shows 1280x720
+03:16:33 run run_57310294852c recorded 1280x720
+03:16:34 portrait clip attached → chip shows 720x1280
+03:16:35 landscape clip attached → chip shows 1280x720
+03:16:35 page errors: [] — OK

@@ -13,9 +13,12 @@ without a second copy of the rule quietly disagreeing with the first.
 - [x] `flow/runs.py` imports `size_for_seed` from `flow_protocol` and no longer defines its own
 - [x] Behaviour is unchanged: the STORY_033 cases still hold, checked against the same shared
       vectors the upstream suite uses
-- [ ] `FLOW_VERSION` is the release that carries the rule and the composer display
-- [ ] The Flow UI on this box shows the corrected size **before** Generate is pressed, for both
-      an uploaded photo and a clip picked for an Extend
+- [x] `FLOW_VERSION` is the release that carries the rule and the composer display — `v0.2.1`, deployed 2026-09-08 03:14 (image `flow.version=v0.2.1`, conformance 23/23, contract green with the portrait-seed check)
+- [x] The Flow UI on this box shows the corrected size **before** Generate is pressed, for both
+      an uploaded photo and a clip picked for an Extend — `flow/tests/e2e_ui_size_preview.py` at the LAN
+      address: landscape photo → chip `1280x720` and the created run recorded `1280x720`; a 720x1280 clip →
+      `720x1280`; an 832x480 clip → `1280x720`; the chip disappears when the reference is removed
+      (`docs/evidence/story-034-size-preview/`)
 - [x] `probe_dimensions` stays here — measuring a local file is this sidecar's job, not the
       protocol's
 - [x] `flow/` stays at or above 95 % line coverage; `gateway/server.py` untouched

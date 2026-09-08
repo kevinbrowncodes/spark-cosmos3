@@ -1,0 +1,25 @@
+✓ GET /capabilities → 200  — got 200
+✓ capabilities validate  — Cosmos 3 Nano: modes=['video'] reference=required progress=percent
+✓ protocol == 1  — got 1
+✓ every mode declares at least one field  — a mode with no fields renders an empty popover
+✓ GET /media → 200  — got 200
+✓ media assets validate  — 41 asset(s)
+✓ GET /jobs/{unknown} → 404  — got 404
+✓ POST /uploads → 201  — got 201: {"id":"in:cbcefb4d-conformance.png","name":"cbcefb4d-conformance.png","kind":"image","source":"upload","created_at":"2026-09-08T07:14:32.815046+00:00"}
+✓ upload asset validates  — in:cbcefb4d-conformance.png
+✓ GET /media/{upload}?type=FULL → 200  — got 200
+✓ GET /media/{upload}?type=THUMBNAIL → image/*  — 200 image/png
+✓ upload appears in /media
+✓ POST /generate unknown mode → 422  — got 422
+✓ POST /generate unknown field → 422  — got 422
+✓ POST /generate without required reference → 422  — got 422
+✓ agent: GET /agent/instructions → 200  — got 200
+✓ agent: instructions validate  — 8 instruction(s)
+✓ agent: plan with unknown instruction → 404  — got 404
+✓ agent: plan with count 0 → 422  — got 422
+✓ agent: run with unknown instruction → 404  — got 404
+✓ agent: GET /agent/runs → 200  — got 200
+✓ agent: runs validate  — 4 run(s)
+✓ agent: GET /agent/runs/{unknown} → 404  — got 404
+
+23/23 passed

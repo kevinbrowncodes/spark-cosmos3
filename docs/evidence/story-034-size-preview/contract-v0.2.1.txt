@@ -1,0 +1,15 @@
+✓ GET /flow/capabilities → 200, protocol 1, Cosmos 3 Nano
+✓ capabilities: length 5/8/10 s (role duration), count [1], no frames, reference_kinds image+video
+✓ GET /flow/ → 200 text/html, shim present
+✓ GET /ui/ → 200 text/html, shim present
+✓ GET /flow/ serves the projects home bundle (./assets/index-CqT2EfgN.js)
+✓ GET / → /flow/
+✓ GET /flow/jobs/{unknown} → 404 with detail
+  8 skill(s): cosmos-3-i2v-amg-scene, cosmos-3-i2v-helios-scene, cosmos-3-i2v-scene, cosmos-3-i2v-time-forecast-scene, cosmos-3-i2v-time-thirst-scene, cosmos-3-i2v-time-youtube-formula-scene, cosmos-3-i2v-weber-scene, example-forecast-scene
+✓ GET /agent/instructions → 200, valid array (STORY_029)
+  4 run(s)
+✓ GET /agent/runs → 200, valid array (STORY_030)
+✓ capabilities.agent declared and /flow/agent/* answers (STORY_032)
+✓ portrait seed + landscape request → 720x1280 (STORY_033)
+✓ image git.sha 82c88db matches HEAD
+contract checks passed

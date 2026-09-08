@@ -76,7 +76,7 @@ def phase_b(browser, ui: str, out: Path, state: Path) -> int:
     return 0
 
 
-def phase_a(browser, base: str, ui: str, out: Path, outputs: Path) -> int:
+def phase_a(browser, base: str, ui: str, out: Path, outputs: Path, ui_version: str | None = None) -> int:
     caps = json.load(urllib.request.urlopen(base + "/flow/capabilities"))
     log("capabilities.agent:", caps.get("agent"))
     assert caps.get("agent"), "the sidecar does not declare the agent capability"
@@ -127,8 +127,13 @@ def phase_a(browser, base: str, ui: str, out: Path, outputs: Path) -> int:
              .filter(has_text=re.compile(r"Protocol"))
              .filter(has_text=re.compile(r"Model")).last.inner_text())
     log("about:", " | ".join(l for l in about.splitlines() if l.strip())[:300])
-    for needle in ("Flow UI", "0.2.0", "Protocol", "v1", "same origin", "Cosmos 3 Nano"):
+    for needle in ("Flow UI", "Protocol", "v1", "same origin", "Cosmos 3 Nano"):
         assert needle in about, f"About lacks {needle!r}: {about!r}"
+    shown = re.search(r"\b\d+\.\d+\.\d+\b", about)
+    assert shown, f"About shows no UI version: {about!r}"
+    if ui_version and shown.group(0) != ui_version:
+        raise AssertionError(f"About shows Flow UI {shown.group(0)}, the pin says {ui_version}")
+    log("Flow UI version shown:", shown.group(0), "(pin:", ui_version or "not given", ")")
     page.screenshot(path=str(out / "04-about.png"))
     page.keyboard.press("Escape")
 
@@ -190,6 +195,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, default=Path("docs/evidence/story-028-home-page"))
     ap.add_argument("--outputs", type=Path, default=Path.home() / "Documents/flow-media/flow-outputs")
     ap.add_argument("--phase", choices=["A", "B"], default="A")
+    ap.add_argument("--ui-version", help="the UI version the About panel must show, e.g. 0.2.1 (the FLOW_VERSION pin without its v)")
     ap.add_argument("--state", type=Path, help="phase B: the storage state e2e_ui_generate.py --state wrote")
     args = ap.parse_args(argv)
     args.out.mkdir(parents=True, exist_ok=True)
@@ -202,7 +208,7 @@ def main(argv: list[str] | None = None) -> int:
                 if not args.state:
                     ap.error("--phase B needs --state")
                 return phase_b(browser, ui, args.out, args.state)
-            return phase_a(browser, args.base, ui, args.out, args.outputs)
+            return phase_a(browser, args.base, ui, args.out, args.outputs, args.ui_version)
         finally:
             browser.close()
 

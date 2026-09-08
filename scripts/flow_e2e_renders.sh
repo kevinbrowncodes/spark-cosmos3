@@ -69,7 +69,8 @@ phase_conformance() {   # STORY_025: the protocol path, exactly what the UI send
 
 phase_home() {          # STORY_028: the projects home page, no render (~30 s)
   mkdir -p docs/evidence/story-028-home-page
-  "$PY" flow/tests/e2e_ui_home.py --base "${UI_BASE:-http://192.168.1.33:8003}" \
+  local pin; pin=$(sed -n 's/^FLOW_VERSION=v\{0,1\}//p' .env 2>/dev/null | tail -1)
+  "$PY" flow/tests/e2e_ui_home.py --base "${UI_BASE:-http://192.168.1.33:8003}" ${pin:+--ui-version "$pin"} \
     | tee docs/evidence/story-028-home-page/verify-phase-a.txt
 }
 
