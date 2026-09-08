@@ -1,0 +1,74 @@
+{
+  "id": "run_9b56240457f8",
+  "project_id": "overnight-2026-09-07",
+  "title": "\ud83d\udebf Sculpted in the Rain \ud83c\udf0a",
+  "state": "done",
+  "clip_index": 3,
+  "clip_count": 3,
+  "instruction": "cosmos-3-i2v-helios-scene",
+  "count": 3,
+  "values": {
+    "size": "832x480",
+    "length": 10,
+    "steps": 35,
+    "sound": true,
+    "upsample": true,
+    "reasoner": "gemma",
+    "count": 1
+  },
+  "reference_id": "in:8e8ca68e-01.jpeg",
+  "seed_kind": "image",
+  "scripts": [
+    "[0:00-0:04] He shifts his weight onto his left leg, causing a slight tilt in his hips, and begins to lift his right arm toward his face.\n[0:04-0:008] As he wipes water from his forehead with his right hand, his bicep and shoulder tighten; he uses his left hand to pull the black cloth slightly upward against his waist, creating a subtle tension in his core.\n[0:08-0:10] He settles into a centered, frontal pose, looking directly into the lens with a heavy-lidded, steady gaze.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet outdoor shower ambient tone only \u2014 the steady splash of water against skin and concrete. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+    "[0:00-0:04] From the centered position, he draws his elbows back and away from his sides, initiating a powerful, slow lat spread.\n[0:04-0:08] The lats widen and the chest muscles expand under the falling water; he holds this broad, muscular pose as the light rakes across the wet, glistening skin.\n[0:08-0:10] He brings his arms back down to his sides, settling into a stable, frontal position with eyes fixed directly on the camera.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet outdoor shower ambient tone only \u2014 the steady splash of water against skin and concrete. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+    "[0:00-0:04] He slowly raises his right hand, fingers brushing against his wet collarbone as he begins a slow, deliberate descent toward the center of his chest.\n[0:04-0:08] The hand continues tracing down over his pectorals, causing the muscles to subtly tense; he arches his torso slightly to catch the light on his abdomen.\n[0:08-0:10] He lets the hand drop to rest near his waist and settles into a final, still pose, looking directly at the lens with an intense, heavy-lidded hold.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet outdoor shower ambient tone only \u2014 the steady splash of water against skin and concrete. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music."
+  ],
+  "titles": [
+    "\ud83d\udebf Sculpted in the Rain \ud83c\udf0a",
+    "\ud83d\udcaa The Power of the Spread \u26a1",
+    "\ud83d\udca6 Summer Shower Physique \u2600\ufe0f",
+    "\ud83d\udd25 Wet Muscle Display \ud83d\udd31",
+    "\u2728 Statuesque Under the Stream \ud83d\udc8e",
+    "\ud83d\udca7 Raking Light & Rippling Abs \ud83c\udf43",
+    "\ud83c\udfcb\ufe0f\u200d\u2642\ufe0f Athletic Summer Glow \ud83c\udf3f",
+    "\ud83d\udd31 The Hero's Pose \u26f2",
+    "\ud83c\udf0a Cascading Water & Tense Core \ud83c\udf90",
+    "\ud83c\udf2c\ufe0f Serene Shower Strength \ud83e\uddff"
+  ],
+  "summary": "# Forecast: The Shower Display (3 Clips, 30 Seconds)\n\n| Stage | Clip(s) / window | What's predicted (and why it fits) |\n|-------|-------------------|------------------------------------|\n| Opening Presentation | Clip 1 / 0:00-0:10 | An initial weight shift and arm movement to introduce physical tension and prepare the pose. |\n| Main Display & Peak Tease | Clip 2 / 0:00-0:10 | A powerful lat spread and chest expansion to maximize the display of the athletic physique under the water. |\n| Settling/Aftermath | Clip 3 / 0:00-0:10 | A slow, trailing hand movement over the torso that concludes with a focused, heavy-lidded gaze at the camera. |\n\nThe scene begins with a simple adjustment to the subject's stance, breaking the initial stillness to prepare for a more dramatic display. It builds into a peak moment of muscular expansion and lat spreading, utilizing the falling water to highlight the texture of the physique, before settling into a final, charismatic gaze directly at the viewer.",
+  "clips": [
+    {
+      "n": 1,
+      "script": "[0:00-0:04] He shifts his weight onto his left leg, causing a slight tilt in his hips, and begins to lift his right arm toward his face.\n[0:04-0:008] As he wipes water from his forehead with his right hand, his bicep and shoulder tighten; he uses his left hand to pull the black cloth slightly upward against his waist, creating a subtle tension in his core.\n[0:08-0:10] He settles into a centered, frontal pose, looking directly into the lens with a heavy-lidded, steady gaze.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet outdoor shower ambient tone only \u2014 the steady splash of water against skin and concrete. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+      "job_id": "video_gen_85139eb3ac1b40248b24bf2627d60331",
+      "media_id": "out:video_gen_85139eb3ac1b40248b24bf2627d60331.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    },
+    {
+      "n": 2,
+      "script": "[0:00-0:04] From the centered position, he draws his elbows back and away from his sides, initiating a powerful, slow lat spread.\n[0:04-0:08] The lats widen and the chest muscles expand under the falling water; he holds this broad, muscular pose as the light rakes across the wet, glistening skin.\n[0:08-0:10] He brings his arms back down to his sides, settling into a stable, frontal position with eyes fixed directly on the camera.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet outdoor shower ambient tone only \u2014 the steady splash of water against skin and concrete. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+      "job_id": "video_gen_9431aed0e1b34a0faef1b0f5117f7b19",
+      "media_id": "out:video_gen_9431aed0e1b34a0faef1b0f5117f7b19.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    },
+    {
+      "n": 3,
+      "script": "[0:00-0:04] He slowly raises his right hand, fingers brushing against his wet collarbone as he begins a slow, deliberate descent toward the center of his chest.\n[0:04-0:08] The hand continues tracing down over his pectorals, causing the muscles to subtly tense; he arches his torso slightly to catch the light on his abdomen.\n[0:08-0:10] He lets the hand drop to rest near his waist and settles into a final, still pose, looking directly at the lens with an intense, heavy-lidded hold.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet outdoor shower ambient tone only \u2014 the steady splash of water against skin and concrete. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+      "job_id": "video_gen_bcc298a23e4347119e75de0cbd73d893",
+      "media_id": "out:video_gen_bcc298a23e4347119e75de0cbd73d893.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    }
+  ],
+  "autostart": true,
+  "error": null,
+  "attempts": 2,
+  "created_at": 1788830959.230678,
+  "updated_at": 1788834580.8084478,
+  "step": "Done"
+}

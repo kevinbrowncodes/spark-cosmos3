@@ -1,0 +1,74 @@
+{
+  "id": "run_8b6325e5c726",
+  "project_id": "overnight-2026-09-07",
+  "title": "\ud83c\udfde\ufe0f Golden Hour Physique Display \ud83c\udfd4\ufe0f",
+  "state": "done",
+  "clip_index": 3,
+  "clip_count": 3,
+  "instruction": "cosmos-3-i2v-helios-scene",
+  "count": 3,
+  "values": {
+    "size": "832x480",
+    "length": 10,
+    "steps": 35,
+    "sound": true,
+    "upsample": true,
+    "reasoner": "gemma",
+    "count": 1
+  },
+  "reference_id": "in:6770c771-01.jpeg",
+  "seed_kind": "image",
+  "scripts": [
+    "[0:00-0:04] His right hand lowers from his brow and begins a slow rotation of his torso toward the lens, presenting the side of his chest and upper abdomen to the light.\n[0:04-0:08] The rotation completes as he pulls his shoulders back, tightening his abdominal muscles into a hard flex; droplets of water slide down his skin, catching the sunlight.\n[0:08-0:10] He settles into a frontal pose with his head turned toward the camera and both eyes looking directly into the lens to anchor the moment.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet lake ambient tone only \u2014 the soft lap of water against the board. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+    "[0:00-0:04] He shifts his weight against the dark edge of the paddleboard, pressing his right forearm down to create a slight, statuesque arch in his spine that emphasizes his V-taper.\n[0:04-0:08] His left hand moves slowly toward his hip, his thumb hooking the red and white waistband of his trunks in a subtle tease; the muscles in his obliques ripple and tighten under the tension.\n[0:08-0:10] He holds this flexed, arched pose with his face turned forward and his heavy-lidded gaze locked onto the camera lens.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet lake ambient tone only \u2014 the soft lap of water against the board. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+    "[0:00-0:04] He releases the waistband and allows his left hand to travel slowly up the side of his ribs, tracing the line of his torso toward his chest.\n[0:04-0:08] He leans back further into the water, causing a gentle ripple to spread around his submerged torso; he maintains an intense, heavy-lidded stare directly at the camera.\n[0:08-0:10] The motion eases into a steady, presentational pause with his head centered and eyes fixed on the lens, presenting the sunlit physique in stillness.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet lake ambient tone only \u2014 the soft lap of water against the board. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music."
+  ],
+  "titles": [
+    "\ud83c\udfde\ufe0f Golden Hour Physique Display \ud83c\udfd4\ufe0f",
+    "\ud83d\udd25 Lakeside Flex and Tease \ud83c\udf0a",
+    "\ud83d\udcaa Statuesque Alpine Athlete \u2600\ufe0f",
+    "\u2728 Sun-Drenched Muscle Presentation \ud83d\udef6",
+    "\ud83d\udca7 Rippling Abs in the Alpine Lake \ud83c\udf32",
+    "\u26a1 The Piercing Gaze of Summer \ud83d\udd31",
+    "\ud83c\udfd4\ufe0f Mountain Majesty and Masculine Form \ud83d\udc8e",
+    "\ud83c\udf0a Liquid Gold: A Lakeside Tableau \ud83c\udff9",
+    "\ud83d\udd25 Summer Heat on the Water \ud83c\udf24\ufe0f",
+    "\ud83c\udf32 The Athlete's Alpine Retreat \ud83e\uddff"
+  ],
+  "summary": "### Forecasted Continuation: Lakeside Physique Display (3 Clips, 30s)\n\n| Stage | Clip(s) / window | What's predicted (and why it fits) |\n|-------|------------------|-----------------------------------|\n| Opening Presentation | Clip 1 / 0:00-0:10 | A slow rotation from the initial brow-wipe to present the chest and abs to the lens. |\n| Main Display & Peak Tease | Clip 2 / 0:00-0:10 | An arched weight shift against the board combined with a subtle waistband tease to maximize tension and display. |\n| Settling & Aftermath | Clip 3 / 0:00-0:10 | A slow hand travel up the ribs followed by a heavy-lidded, steady hold to conclude the sequence in stillness. |\n\nThe scene begins with the subject transitioning from a casual adjustment of his brow into a deliberate presentation of his torso. As the sequence progresses, the physical display builds through an arched flex and a subtle waistband tease, utilizing the paddleboard for leverage. The moment concludes by settling into a powerful, stationary gaze that anchors the intensity of the physique in the sunlight.",
+  "clips": [
+    {
+      "n": 1,
+      "script": "[0:00-0:04] His right hand lowers from his brow and begins a slow rotation of his torso toward the lens, presenting the side of his chest and upper abdomen to the light.\n[0:04-0:08] The rotation completes as he pulls his shoulders back, tightening his abdominal muscles into a hard flex; droplets of water slide down his skin, catching the sunlight.\n[0:08-0:10] He settles into a frontal pose with his head turned toward the camera and both eyes looking directly into the lens to anchor the moment.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet lake ambient tone only \u2014 the soft lap of water against the board. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+      "job_id": "video_gen_29fd727dfa3d4187851099486809f20a",
+      "media_id": "out:video_gen_29fd727dfa3d4187851099486809f20a.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    },
+    {
+      "n": 2,
+      "script": "[0:00-0:04] He shifts his weight against the dark edge of the paddleboard, pressing his right forearm down to create a slight, statuesque arch in his spine that emphasizes his V-taper.\n[0:04-0:08] His left hand moves slowly toward his hip, his thumb hooking the red and white waistband of his trunks in a subtle tease; the muscles in his obliques ripple and tighten under the tension.\n[0:08-0:10] He holds this flexed, arched pose with his face turned forward and his heavy-lidded gaze locked onto the camera lens.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet lake ambient tone only \u2014 the soft lap of water against the board. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+      "job_id": "video_gen_5c23d8082a9545d58a53f8ec4bc4c0ba",
+      "media_id": "out:video_gen_5c23d8082a9545d58a53f8ec4bc4c0ba.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    },
+    {
+      "n": 3,
+      "script": "[0:00-0:04] He releases the waistband and allows his left hand to travel slowly up the side of his ribs, tracing the line of his torso toward his chest.\n[0:04-0:08] He leans back further into the water, causing a gentle ripple to spread around his submerged torso; he maintains an intense, heavy-lidded stare directly at the camera.\n[0:08-0:10] The motion eases into a steady, presentational pause with his head centered and eyes fixed on the lens, presenting the sunlit physique in stillness.\nThe camera stays completely fixed \u2014 no pan, tilt, or zoom. Quiet lake ambient tone only \u2014 the soft lap of water against the board. No voices, speech, dialogue, chatter, distant talking, echoes of people, crowd, footsteps, or music.",
+      "job_id": "video_gen_ba244cda66af4befb9944bb74ffd1edf",
+      "media_id": "out:video_gen_ba244cda66af4befb9944bb74ffd1edf.mp4",
+      "status": "done",
+      "progress": 100,
+      "error": null
+    }
+  ],
+  "autostart": true,
+  "error": null,
+  "attempts": 1,
+  "created_at": 1788830959.3105206,
+  "updated_at": 1788838513.4811926,
+  "step": "Done"
+}
