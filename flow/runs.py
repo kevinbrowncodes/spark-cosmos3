@@ -12,16 +12,14 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import math
 import secrets
 import shutil
 import subprocess
 import time
-from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from flow_protocol import GenerateRequest, normalise_request
+from flow_protocol import GenerateRequest, normalise_request, size_for_seed
 from flow_protocol.gateway import UpstreamError
 from flow_protocol.media import kind_of
 
@@ -37,10 +35,9 @@ CONDITION_SECONDS = 3.0
 # the seed (STORY_033), so the orientation written here is irrelevant.
 DEFAULT_TIER = "832x480"
 DEFAULT_VALUES: dict[str, Any] = {"length": 10, "steps": 35, "sound": True, "upsample": True, "reasoner": "gemma"}
-# Sizes within this log-aspect distance of the best match count as "the same shape", so the two
-# orientations of one shape compete on pixel count instead. ln(16/9) - ln(4/3) is 0.29, so 0.15
-# separates the five shapes the gateway offers without splitting an orientation pair.
-ASPECT_TOLERANCE = 0.15
+# The size-from-seed rule itself lives upstream (flow_protocol.sizing, STORY-608 / STORY_034) so the
+# Flow UI can preview the same choice; this sidecar keeps the measuring (ffprobe, for video seeds
+# too) and the policy of what tier to spend by default.
 
 
 def probe_dimensions(path: Path | str) -> tuple[int, int] | None:
@@ -58,32 +55,6 @@ def probe_dimensions(path: Path | str) -> tuple[int, int] | None:
     except (subprocess.SubprocessError, ValueError, IndexError) as exc:
         log.warning("could not measure %s: %s", path, exc)
         return None
-
-
-def _dims(size: str) -> tuple[int, int] | None:
-    try:
-        w, h = (int(n) for n in str(size).lower().split("x"))
-        return (w, h) if w > 0 and h > 0 else None
-    except (ValueError, AttributeError):
-        return None
-
-
-def size_for_seed(options: Sequence[str], requested: str | None, seed: tuple[int, int] | None) -> str | None:
-    """Pick the offered size shaped like the seed, at the pixel budget `requested` asked for.
-
-    Shape comes from the seed, resolution from the request (STORY_033): the engine conditions
-    on the seed as the first frame, so any other shape is rendered squashed — which is never
-    what a caller wants, even when they sent the size themselves. With no seed or no options
-    the request stands unchanged.
-    """
-    sized = [(o, d) for o in options if (d := _dims(o))]
-    if not sized or not seed:
-        return requested
-    target = math.log(seed[0] / seed[1])
-    budget = (lambda d: d[0] * d[1])(_dims(requested) or (0, 0)) if requested else 0
-    best = min(abs(math.log(w / h) - target) for _, (w, h) in sized)
-    close = [(o, w * h) for o, (w, h) in sized if abs(math.log(w / h) - target) <= best + ASPECT_TOLERANCE]
-    return min(close, key=lambda t: (abs(t[1] - budget), t[0]))[0]
 
 
 def size_options(caps: Any, mode: str = "video") -> list[str]:

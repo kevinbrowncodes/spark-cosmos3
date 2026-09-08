@@ -10,15 +10,15 @@ without a second copy of the rule quietly disagreeing with the first.
 
 ## Acceptance Criteria
 
-- [ ] `flow/runs.py` imports `size_for_seed` from `flow_protocol` and no longer defines its own
-- [ ] Behaviour is unchanged: the STORY_033 cases still hold, checked against the same shared
+- [x] `flow/runs.py` imports `size_for_seed` from `flow_protocol` and no longer defines its own
+- [x] Behaviour is unchanged: the STORY_033 cases still hold, checked against the same shared
       vectors the upstream suite uses
 - [ ] `FLOW_VERSION` is the release that carries the rule and the composer display
 - [ ] The Flow UI on this box shows the corrected size **before** Generate is pressed, for both
       an uploaded photo and a clip picked for an Extend
-- [ ] `probe_dimensions` stays here — measuring a local file is this sidecar's job, not the
+- [x] `probe_dimensions` stays here — measuring a local file is this sidecar's job, not the
       protocol's
-- [ ] `flow/` stays at or above 95 % line coverage; `gateway/server.py` untouched
+- [x] `flow/` stays at or above 95 % line coverage; `gateway/server.py` untouched
 
 ## Technical Notes
 

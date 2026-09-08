@@ -1,4 +1,5 @@
-"""STORY_033: the agent takes the clip's shape from the seed and its resolution from the request.
+"""STORY_033 / STORY_034: the agent takes the clip's shape from the seed and its resolution from the
+request. The rule itself now comes from flow_protocol (STORY-608); these cases mirror protocol/size-vectors.json.
 
 BUG_012 is the case these exist for — a landscape photo asked for at 720x1280 must come back
 as 1280x720, not as a squashed portrait, and it must not quietly become a cheaper render.
@@ -13,7 +14,9 @@ from types import SimpleNamespace
 import pytest
 
 import flow.runs as fr
-from flow.runs import DEFAULT_TIER, probe_dimensions, size_for_seed, size_options
+from flow_protocol import size_for_seed
+
+from flow.runs import DEFAULT_TIER, probe_dimensions, size_options
 
 # What the gateway offers on this box: five shapes, both ways up.
 OPTIONS = ["960x960", "1104x832", "832x1104", "1280x720", "720x1280", "640x640", "736x544", "544x736", "832x480", "480x832"]

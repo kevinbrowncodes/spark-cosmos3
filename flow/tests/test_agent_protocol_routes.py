@@ -66,7 +66,8 @@ def upload(client) -> str:
 
 def test_capabilities_declare_agent_and_both_prefixes_agree(client):
     caps = client.get("/flow/capabilities").json()
-    assert caps["agent"] == {"instructions": True, "count": {"min": 1, "max": 12, "default": 3}, "confirm": "always", "fields": ["size", "length", "steps", "sound", "upsample", "reasoner"]}
+    assert caps["agent"] == {"instructions": True, "count": {"min": 1, "max": 12, "default": 3}, "confirm": "always",
+                             "fields": ["size", "length", "steps", "sound", "upsample", "reasoner"], "shape_from_seed": True}
     assert client.get("/flow/agent/instructions").json() == client.get("/agent/instructions").json()
     assert client.get("/flow/agent/runs").json() == [] == client.get("/agent/runs").json()
 

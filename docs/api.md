@@ -200,7 +200,7 @@ still measured over the total.
 ### Flow UI sidecar (`:8003`)
 
 The `flow` container (EPIC_002) hosts the Flow editor at `http://spark-1.local:8003/flow/` (also `/ui/`; `/` redirects)
-and implements the [Flow Gateway Protocol v1](https://github.com/kevinbrowncodes/flow/blob/v0.2.0/protocol/PROTOCOL.md)
+and implements the [Flow Gateway Protocol v1](https://github.com/kevinbrowncodes/flow/blob/v0.2.1/protocol/PROTOCOL.md)
 under `/flow/*`. It is a pure client of this gateway: it only calls
 `POST /generate`, `GET /jobs/{id}` and `GET /jobs/{id}/content`, and never
 the engine. Two rules worth knowing when reading its traffic:

@@ -3,7 +3,7 @@
 # whitelists only flow/ and those two files.
 FROM python:3.12-slim AS base
 
-ARG FLOW_VERSION=v0.2.0
+ARG FLOW_VERSION=v0.2.1
 ARG GIT_SHA=unknown
 LABEL git.sha=$GIT_SHA flow.version=$FLOW_VERSION
 

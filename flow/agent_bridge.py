@@ -32,6 +32,9 @@ except ImportError:  # pragma: no cover — exercised by the image build against
 AGENT_CAPABILITIES: dict[str, Any] = {
     "instructions": True,
     "count": {"min": 1, "max": 12, "default": 3},
+    # STORY_034: the clip's shape follows the seed (flow_protocol.size_for_seed), and saying so
+    # lets the Flow UI preview that choice before a render (flow STORY-608).
+    "shape_from_seed": True,
     "confirm": "always",
     "fields": ["size", "length", "steps", "sound", "upsample", "reasoner"],
 }
