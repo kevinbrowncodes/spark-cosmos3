@@ -9,23 +9,23 @@ throw away after waiting 45 minutes for it.
 
 ## Acceptance Criteria
 
-- [ ] **Shape comes from the seed, resolution comes from the request.** The agent keeps the
+- [x] **Shape comes from the seed, resolution comes from the request.** The agent keeps the
       pixel budget of whatever size was asked for and picks the offered size whose proportions
       match the seed: ask for `720x1280` with a landscape photo and you get `1280x720`, not a
       squashed portrait; ask for `832x480` with a portrait photo and you get `480x832`
-- [ ] Where several offered sizes share the closest shape, the one nearest the **requested**
+- [x] Where several offered sizes share the closest shape, the one nearest the **requested**
       size in pixel count wins, so a 480p request never silently becomes a 720p render
-- [ ] This applies to every caller, including one that sends a size. A size arriving from the
+- [x] This applies to every caller, including one that sends a size. A size arriving from the
       Flow UI is the UI echoing its own default, not a considered choice — treating it as
       binding is what put two landscape runs into a portrait frame on 2026-09-07 and is the
       reason this story exists. There is deliberately **no way to force a mismatched aspect**:
       the engine conditions on the seed as the first frame, so a mismatch is always a squash
-- [ ] A **video** seed is measured the same way as an image seed (Extend runs keep the shape
+- [x] A **video** seed is measured the same way as an image seed (Extend runs keep the shape
       of the clip they continue)
-- [ ] If the seed cannot be measured, the run falls back to the gateway's default size and
+- [x] If the seed cannot be measured, the run falls back to the gateway's default size and
       says so in the run's record rather than failing
-- [ ] `flow/runs.py` no longer contains a hardcoded `size`
-- [ ] The chosen size appears in the run record and in `scripts/flow_agent.sh show`, so it is
+- [x] `flow/runs.py` no longer contains a hardcoded `size`
+- [x] The chosen size appears in the run record and in `scripts/flow_agent.sh show`, so it is
       obvious before approving a plan what shape the clips will be
 
 ## Technical Notes

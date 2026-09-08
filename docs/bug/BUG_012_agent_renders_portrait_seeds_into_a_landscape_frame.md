@@ -1,6 +1,6 @@
 # BUG_012 — The agent renders portrait seeds into a landscape frame, so the video comes out squashed
 
-**Status:** Open
+**Status:** Resolved 2026-09-07 by STORY_033
 **Found:** 2026-09-07, watching `run_e3bd921556a7`'s joined output — "it's all smooshed"
 **Affects:** `flow/runs.py` `DEFAULT_VALUES`; every agent run whose seed is not 16:9, which is every phone photo
 
@@ -58,7 +58,14 @@ un-squashed after the fact, at the cost of vertical sharpness (only 480 lines we
 
 ## Acceptance criteria
 
-- [ ] A run seeded with a portrait image renders portrait; one seeded with a landscape image renders landscape
-- [ ] An explicit `--size` still wins over the automatic choice
-- [ ] The agent no longer carries a hardcoded size constant
-- [ ] Implemented under STORY_033, which this ticket blocks
+- [x] A run seeded with a portrait image renders portrait; one seeded with a landscape image renders landscape
+- [x] ~~An explicit `--size` still wins over the automatic choice~~ — **reversed while implementing**: the Flow UI always sends a size, so honouring it would have left two landscape runs in a portrait frame. The request now sets the resolution and the seed sets the shape; a size the gateway does not offer is still rejected
+- [x] The agent no longer carries a hardcoded size constant
+- [x] Implemented under STORY_033, which this ticket blocks
+
+## Resolution
+
+STORY_033. Verified on the box without a render: the real portrait seed asked for at
+`720x1280` records `720x1280`, and Kevin's landscape seed asked for at the same size records
+`1280x720` — same 921,600 pixels, right way up. His two in-flight runs were corrected in
+place before they reached the GPU. Evidence: `docs/evidence/story-033-seed-shape/`.

@@ -1,0 +1,4 @@
+STORY_033 E2E on the box, 2026-09-07 20:05 — no render: create, read the recorded size, abandon.
+
+seed input_cap_guy.jpg                              768,1376   asked 720x1280 -> recorded 720x1280
+seed 6770c771-01.jpeg                               1376,768   asked 720x1280 -> recorded 1280x720
