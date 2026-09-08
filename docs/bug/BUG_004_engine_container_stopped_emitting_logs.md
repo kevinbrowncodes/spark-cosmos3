@@ -1,6 +1,6 @@
 # BUG_004 — The engine container has emitted no Docker logs since 2026-06-20
 
-**Status:** Root cause found 2026-09-07; workaround in use, permanent fix waits for a container recreate
+**Status:** Resolved 2026-09-07 — root cause found, log rotation added, verified after a container recreate
 **Found:** 2026-09-06, while verifying STORY_023 (Flow sidecar)
 **Affects:** progress sidecar (`:8001`, terminal-signal pin), the CLAUDE.md §4 guard `docker logs cosmos3-api --since 10m`, any log-based debugging
 
@@ -89,3 +89,22 @@ depend on these logs, so renders (and the Flow UI) still work; only the
 sidecar's end-of-denoise "→ 99" pin is lost. Before restarting anything,
 check for an in-flight job via the gateway's job log directory (`data/logs/jobs`,
 newest entry) and `GET :8002/jobs/{id}` rather than `docker logs`.
+
+## Resolution, verified 2026-09-07 20:04
+
+`docker-compose.yml` gives the engine `max-size: 50m` / `max-file: 3`, and the container was
+recreated (a restart keeps the old file, so it had to be `up -d --force-recreate`). On the
+fresh log:
+
+| check | before | after |
+|---|---|---|
+| `docker logs cosmos3-api` newest timestamp | 2026-06-20T15:57:09 | 2026-09-08T00:04:31 |
+| sequential read | 48,792 lines, stops mid-file | 135 lines, complete |
+| `--since 10m` | 0 lines | 135 lines |
+
+`--since` works again, so the CLAUDE.md guard and any log-based tooling are usable. The
+progress sidecar answers with live figures again (`step 12/35, 56.44 s/step`) rather than the
+stale process-uptime reading recorded in this ticket's reproduction.
+
+Keep the `--tail` habit anyway: it is the access path that survives a log in this state, and
+rotation makes the condition unlikely rather than impossible.
