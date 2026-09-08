@@ -1,9 +1,6 @@
 # EPIC_002 — A browser UI for generating and extending clips
 
-**Status:** STORY_023–027 done. STORY_026's Extend path is proven on the box (2026-09-07: a
-three-clip chain rendered, each Extend reading the previous *trimmed* clip — see BUG_007, which that
-run found and closed). STORY_028 (the v0.2.0 upgrade: projects home page) is being verified now.
-The held renders from 2026-09-06 were unblocked by restarting the engine (BUG_010).
+**Status:** Done 2026-09-08 — STORY_023 through STORY_028 all closed. Both STORY_025 renders landed (the browser-driven clip and the conformance clip at the UI defaults), the Extend chain is proven three clips deep with a measured seam (STORY_026, BUG_007), and the v0.2.0 upgrade held with `flow/gateway.py` and `flow/app.py` untouched (STORY_028). Follow-ons live in EPIC_003 and BACKLOG_002/003/006/008.
 **Stories:** STORY_023 → STORY_028
 **Related:** EPIC_001 (V2V), BACKLOG_002 (upstream Flow work this epic depends on for cancel/ETA/extend button)
 **Upstream:** https://github.com/kevinbrowncodes/flow — `protocol/PROTOCOL.md`, `protocol/python/README.md`, release `v0.1.0`
